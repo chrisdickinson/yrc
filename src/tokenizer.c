@@ -87,9 +87,12 @@ static yrc_token_t* _add_token(yrc_tokenizer_t* state, yrc_token_type type) {
   }
   state->state = YRC_TKS_DEFAULT;
   tk->type = type;
-  tk->line = state->line;
-  tk->fpos = state->fpos;
-  tk->col = state->col;
+  tk->start.fpos = state->last_fpos;
+  tk->start.line = state->last_line;
+  tk->start.col = state->last_col;
+  tk->end.fpos = state->fpos;
+  tk->end.line = state->line;
+  tk->end.col = state->col;
   if (yrc_llist_push(state->tokens, tk)) {
     free(tk);
     return NULL;
@@ -138,7 +141,12 @@ int yrc_tokenizer_init(yrc_tokenizer_t** state) {
   obj->comment_delim = YRC_COMMENT_DELIM_NONE;
   obj->string_delim = YRC_STRING_DELIM_NONE;
   obj->last_char = 0;
-
+  obj->fpos = 0;
+  obj->col = 0;
+  obj->line = 1;
+  obj->last_fpos = 0;
+  obj->last_col = 0;
+  obj->last_line = 1;
   if (yrc_llist_init(&obj->tokens)) {
     return 1;
   }
@@ -174,9 +182,13 @@ int yrc_tokenizer_free(yrc_tokenizer_t* state) {
 
 int _yrc_run_default(yrc_tokenizer_t* state, char* data, size_t size, size_t* offs) {
   DEBUG_VISIT(_yrc_run_default)
-
   yrc_token_t* tk;
   char peek;
+
+  state->last_fpos = state->fpos;
+  state->last_line = state->line;
+  state->last_col = state->col;
+
   peek = data[*offs];
   switch (peek) {
     case '\0':
@@ -327,6 +339,7 @@ int _yrc_run_whitespace(yrc_tokenizer_t* state, char* data, size_t size, size_t*
   }
   tk->info.as_whitespace.data = tokendata;
   tk->info.as_whitespace.size = tokensize;
+  tk->info.as_whitespace.has_newline = state->line != state->last_line;
   return 0;
 }
 
@@ -397,6 +410,7 @@ int _yrc_run_string_unicode(yrc_tokenizer_t* state, char* data, size_t size, siz
   DEBUG_VISIT(_yrc_run_string_unicode)
 
   size_t offset = *offs;
+  return 0;
 }
 
 
@@ -404,6 +418,7 @@ int _yrc_run_string_hex(yrc_tokenizer_t* state, char* data, size_t size, size_t*
   DEBUG_VISIT(_yrc_run_string_hex)
 
   size_t offset = *offs;
+  return 0;
 }
 
 int _yrc_run_number(yrc_tokenizer_t* state, char* data, size_t size, size_t* offs) {
@@ -508,26 +523,22 @@ void _advance_op(yrc_tokenizer_t* state, char ch) {
   size_t i;
   size_t j;
   if (state->op_current == NULL) {
-    printf("nop\n");
     return;
   }
   if (state->op_current == &OP_ROOT) {
     for (i = 0; i < sizeof OPERATORS; ++i) {
       if (OPERATORS[i]->c == ch) {
-        printf("moving from ROOT to %c\n", ch);
         state->op_current = OPERATORS[i];
         return;
       }
     }
 
-    printf("moving from ROOT to NULL\n");
     state->op_current = NULL;
     return;
   }
 
   for (i = 0; i < 4 && state->op_current->next[i]; ++i) {
     if (state->op_current->next[i]->c == ch) {
-      printf("moving from %c to %c\n", state->op_current->c, ch);
       state->op_last = state->op_current;
       state->op_current = state->op_current->next[i];
       return;
@@ -537,7 +548,6 @@ void _advance_op(yrc_tokenizer_t* state, char ch) {
   if (state->op_last == &OP_ROOT) {
     state->op_last = state->op_current;
     state->op_current = NULL;
-    printf("cannot continue, moving to NULL\n");
     return;
   }
 
@@ -545,20 +555,17 @@ void _advance_op(yrc_tokenizer_t* state, char ch) {
     if(state->op_last->next[i] == state->op_current) {
       for(j = i + 1; j < 4 && state->op_last->next[j]; ++j) {
         if(state->op_last->next[j]->c == ch) {
-          printf("retry: moving from %c to %c\n", state->op_last->c, ch);
           state->op_current = state->op_last->next[j];
 
           return;
         }
       }
 
-      printf("retry: fail, moving to NULL\n");
       state->op_current = NULL;
       return;
     }
   }
 
-  printf("??? moving to NULL\n");
   state->op_last = state->op_current;
   state->op_current = NULL;
 }
@@ -788,7 +795,7 @@ int yrc_tokenizer_advance(yrc_tokenizer_t* state, char* data, size_t size) {
 
 int iter(void* item, size_t idx, void* ctx, int* stop) {
   yrc_token_t* tk = item;
-  printf("%llu:%llu %s <<", tk->line, tk->col, TOKEN_TYPES_MAP[tk->type]);
+  printf("%llu:%llu %s <<", tk->start.line, tk->start.col, TOKEN_TYPES_MAP[tk->type]);
   switch (tk->type) {
     case YRC_TOKEN_COMMENT:
       fwrite(tk->info.as_comment.data, tk->info.as_comment.size, 1, stdout);

@@ -52,40 +52,12 @@ struct yrc_tokenizer_s {
   yrc_op_t* op_current;
   yrc_op_t* op_last;
 
+  uint64_t last_fpos;
+  uint64_t last_line;
+  uint64_t last_col;
+
   uint64_t fpos;
   uint64_t line;
   uint64_t col;
 };
-
-/*
-comment
-  comment mode
-  last char
-dispatch
-  seen dot?
-identifier
-  accumulator (for string)
-  current keyword progress
-  last keyword
-number
-  seen dot?
-  seen exponent?
-  seen hex?
-  accumulator
-operator
-  current operator
-  last operator
-    -> comment
-    -> regexp (not impl)
-string
-  delim
-  accum (normal)
-  accum (escape)
-
-  string normal
-    string escape
-    string hex
-    string unicode
-    string nul
-*/
 #endif

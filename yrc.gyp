@@ -62,6 +62,8 @@
       'sources': [
         'common.gypi',
         'include/yrc.h',
+        'src/accumulator.c',
+        'src/llist.c',
         'src/tokenizer.c',
         'src/parser.c'
       ]
