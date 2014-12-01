@@ -2,18 +2,112 @@
 #define _YRC_TOKENIZER_H
 #include "accumulator.h"
 
-#define YRC_TOKENIZER_STATE_MAP(XX) \
-  XX(DEFAULT, default) \
-  XX(WHITESPACE, whitespace) \
+
+/**
+  token types -- in "ENUM" and "ident"
+  flavors.
+**/
+#define YRC_TOKEN_TYPES(XX) \
   XX(STRING, string) \
-  XX(STRING_ESCAPE, string_escape) \
-  XX(STRING_UNICODE, string_unicode) \
-  XX(STRING_HEX, string_hex) \
   XX(NUMBER, number) \
-  XX(IDENTIFIER, identifier) \
+  XX(IDENT, ident) \
+  XX(KEYWORD, keyword) \
   XX(OPERATOR, operator) \
-  XX(COMMENT_LINE, comment_line) \
-  XX(COMMENT_BLOCK, comment_block)
+  XX(COMMENT, comment) \
+  XX(WHITESPACE, whitespace)
+
+
+/**
+  keywords -- from string to ENUM.
+**/
+#define YRC_KEYWORD_MAP(XX) \
+  XX("while", WHILE)\
+  XX("do", DO)\
+  XX("if", IF)\
+  XX("for", FOR)\
+  XX("break", BREAK)\
+  XX("continue", CONTINUE)\
+  XX("return", RETURN)\
+  XX("try", TRY)\
+  XX("var", VAR)\
+  XX("in", IN)\
+  XX("instanceof", INSTANCEOF)\
+  XX("void", VOID)\
+  XX("typeof", TYPEOF)\
+  XX("delete", DELETE)\
+  XX("new", NEW)
+
+
+/**
+  operators -- from string to ENUM.
+**/
+#define YRC_OPERATOR_MAP(XX) \
+  XX("=", EQ)\
+  XX("==", EQEQ)\
+  XX("===", EQEQEQ)\
+  XX("+", ADD)\
+  XX("+=", ADDEQ)\
+  XX("++", INCR)\
+  XX("-", SUB)\
+  XX("-=", SUBEQ)\
+  XX("--", DECR)\
+  XX("!", NOT)\
+  XX("!=", NOTEQ)\
+  XX("!==", NOTEQEQ)\
+  XX("&", AND)\
+  XX("&=", ANDEQ)\
+  XX("&&", LAND)\
+  XX("|", OR)\
+  XX("|=", OREQ)\
+  XX("||", LOR)\
+  XX("^", XOR)\
+  XX("^=", XOREQ)\
+  XX("^^", LXOR)\
+  XX("%", MOD)\
+  XX("%=", MODEQ)\
+  XX("*", MUL)\
+  XX("*=", MULEQ)\
+  XX("/", DIV)\
+  XX("/=", DIVEQ)\
+  XX("(", LPAREN)\
+  XX(")", RPAREN)\
+  XX(".", DOT)\
+  XX(",", COMMA)\
+  XX("?", QUESTION)\
+  XX("~", TILDE)\
+  XX(":", COLON)\
+  XX(";", SEMICOLON)\
+  XX("{", LBRACE)\
+  XX("}", RBRACE)\
+  XX("[", LBRACK)\
+  XX("]", RBRACK)\
+  XX("<", LESSER)\
+  XX("<=", LESSEREQ)\
+  XX("<<", LSHF)\
+  XX("<<=", LSHFEQ)\
+  XX(">", GREATER)\
+  XX(">=", GREATEREQ)\
+  XX(">>", RSHF)\
+  XX(">>=", RSHFEQ)\
+  XX(">>>", URSHF)\
+  XX(">>>=", URSHFEQ)
+
+enum {
+  #define XX(a, b) YRC_TOKEN_##a,
+  YRC_TOKEN_TYPES(XX)
+  #undef XX
+  YRC_TOKEN_EOF
+};
+
+enum {
+#define XX(a, b) YRC_OP_##b,
+  YRC_OPERATOR_MAP(XX)
+#undef XX
+#define XX(a, b) YRC_KW_##b,
+  YRC_KEYWORD_MAP(XX)
+#undef XX
+  YRC_OP_NULL=0
+};
 
 enum {
   YRC_COMMENT_DELIM_NONE=0,
@@ -27,37 +121,75 @@ enum {
   YRC_STRING_DELIM_DOUBLE
 };
 
-enum {
-  YRC_TKS_NULL=0,
-  YRC_TKS_ERROR,
-  YRC_TKS_DONE
-#define XX(a, b) , YRC_TKS_##a
-  YRC_TOKENIZER_STATE_MAP(XX)
-#undef XX
-};
 
-typedef struct yrc_op_s yrc_op_t;
+typedef uint32_t yrc_token_comment_delim;
+typedef uint32_t yrc_token_string_delim;
+typedef uint32_t yrc_token_number_repr;
+typedef uint32_t yrc_token_type;
 
-typedef uint32_t yrc_tokenizer_state;
+#define REPR_SEEN_DOT    0x0001
+#define REPR_SEEN_HEX    0x0002
+#define REPR_SEEN_EXP_LE 0x0004
+#define REPR_SEEN_EXP_BE 0x0008
+#define REPR_SEEN_EXP    (REPR_SEEN_EXP_LE | REPR_SEEN_EXP_BE)
+#define REPR_SEEN_ANY    0x000F
+#define REPR_IS_FLOAT    0x0010
+typedef uint32_t yrc_token_operator_t;
+typedef uint32_t yrc_token_keyword_t;
 
-struct yrc_tokenizer_s {
-  yrc_tokenizer_state state;
-  yrc_token_comment_delim comment_delim;
-  yrc_token_string_delim string_delim;
-  yrc_llist_t* tokens;
-  uint32_t seen_flags;  /* 0x01 == dot, 0x10 == exponent e, 0x100 == exponent E, 0x1000 == x */
-  uint32_t last_char;
-  yrc_accum_t* accum_primary;
-  yrc_accum_t* accum_secondary;
-  yrc_op_t* op_current;
-  yrc_op_t* op_last;
+typedef struct yrc_token_string_s {
+  yrc_token_string_delim delim;  /* " ' ''' """ */
+  size_t size;
+  char* data;
+} yrc_token_string_t;
 
-  uint64_t last_fpos;
-  uint64_t last_line;
-  uint64_t last_col;
+typedef struct yrc_token_number_s {
+  yrc_token_number_repr repr; /* 0xXX .dd d.d ded dEd .ddEd .dded d.dEd d.ded */
+  union {
+    uint64_t as_int;
+    double as_double;
+  } data;
+} yrc_token_number_t;
 
-  uint64_t fpos;
+typedef struct yrc_token_ident_s {
+  size_t size;
+  char* data;
+} yrc_token_ident_t;
+
+typedef struct yrc_token_comment_s {
+  yrc_token_comment_delim delim; /* c-style cpp-style */
+  size_t size;
+  char* data;
+} yrc_token_comment_t;
+
+typedef struct yrc_token_whitespace_s {
+  size_t size;
+  char* data;
+  int has_newline;
+} yrc_token_whitespace_t;
+
+typedef struct yrc_position_s {
   uint64_t line;
   uint64_t col;
-};
+  uint64_t fpos;
+} yrc_position_t;
+
+typedef struct yrc_token_s {
+  yrc_token_type type;
+  yrc_position_t start;
+  yrc_position_t end;
+
+  union {
+#define XX(a, b) yrc_token_##b##_t as_##b;
+  YRC_TOKEN_TYPES(XX)
+#undef XX
+  } info;
+} yrc_token_t;
+
+typedef struct yrc_tokenizer_s yrc_tokenizer_t;
+
+void yrc_token_repr(yrc_token_t*);
+int yrc_tokenizer_init(yrc_tokenizer_t**, size_t);
+int yrc_tokenizer_scan(yrc_tokenizer_t*, yrc_readcb, yrc_token_t**);
+int yrc_tokenizer_free(yrc_tokenizer_t*);
 #endif

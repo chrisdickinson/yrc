@@ -4,34 +4,41 @@
 #include <stdlib.h> /* malloc + free */
 #include <stdio.h>
 
-#define DEBUG_VISIT(a) //printf("%s\n", #a);
-
-struct yrc_op_s {
+typedef struct yrc_op_s {
   int c;
   struct yrc_op_s* next[4];
-};
+} yrc_op_t;
 
-const char* STATE_MAP[] = {
-  "YRC_TKS_NULL",
-  "ERROR",
-  "DONE"
-#define XX(a, b) , #a
-  YRC_TOKENIZER_STATE_MAP(XX)
-#undef XX
+typedef uint32_t yrc_tokenizer_state;
+
+struct yrc_tokenizer_s {
+  yrc_llist_t* tokens;
+  uint64_t fpos;
+  uint64_t line;
+  uint64_t col;
+  size_t offset;
+  size_t start;
+  size_t size;
+
+  char* data;
+  size_t chunksz;
+  yrc_accum_t* primary;
+  yrc_accum_t* secondary;
 };
 
 const char* TOKEN_TYPES_MAP[] = {
-  "EOF"
-#define XX(a, b) , #b 
+#define XX(a, b) #b,
   YRC_TOKEN_TYPES(XX)
 #undef XX
+  "EOF"
 };
 
 const char* TOKEN_OPERATOR_MAP[] = {
-  "NULL_OP"
-#define XX(a, b) , a
+#define XX(a, b) a,
   YRC_OPERATOR_MAP(XX)
+  YRC_KEYWORD_MAP(XX)
 #undef XX
+  "NULL_OP"
 };
 
 yrc_op_t
@@ -78,35 +85,11 @@ yrc_op_t* OPERATORS[] = {
   &GT_GTGT_EQ_NUL,
 };
 
-static yrc_token_t* _add_token(yrc_tokenizer_t* state, yrc_token_type type) {
-  yrc_token_t* tk;
-
-  tk = malloc(sizeof(*tk));
-  if (tk == NULL) {
-    return NULL;
-  }
-  state->state = YRC_TKS_DEFAULT;
-  tk->type = type;
-  tk->start.fpos = state->last_fpos;
-  tk->start.line = state->last_line;
-  tk->start.col = state->last_col;
-  tk->end.fpos = state->fpos;
-  tk->end.line = state->line;
-  tk->end.col = state->col;
-  if (yrc_llist_push(state->tokens, tk)) {
-    free(tk);
-    return NULL;
-  }
-  return tk;
-}
-
-
-static yrc_token_operator_t _string_to_operator(char* data, size_t size) {
-  DEBUG_VISIT(_string_to_operator)
+static yrc_token_operator_t _string_to_operator(char* data, size_t size, size_t start) {
   size_t i;
   size_t j;
 
-  for(i = 1; i < sizeof(TOKEN_OPERATOR_MAP) / sizeof(TOKEN_OPERATOR_MAP[0]); ++i) {
+  for(i = start; i < sizeof(TOKEN_OPERATOR_MAP) / sizeof(TOKEN_OPERATOR_MAP[0]); ++i) {
     for(j = 0; j < size && TOKEN_OPERATOR_MAP[i][j] != 0; ++j) {
       if (TOKEN_OPERATOR_MAP[i][j] != data[j]) {
         break;
@@ -121,680 +104,581 @@ static yrc_token_operator_t _string_to_operator(char* data, size_t size) {
 }
 
 
-static void _take(yrc_tokenizer_t* state, char c) {
-  ++state->fpos;
-  if (c == '\n') {
-    ++state->line;
-    state->col = 0;
-  } else {
-    ++state->col;
-  }
-}
-
-
-int yrc_tokenizer_init(yrc_tokenizer_t** state) {
+int yrc_tokenizer_init(yrc_tokenizer_t** state, size_t chunksz) {
   yrc_tokenizer_t* obj = malloc(sizeof(*obj));
   if (obj == NULL) {
     return 1;
   }
-  obj->state = YRC_TKS_DEFAULT;
-  obj->comment_delim = YRC_COMMENT_DELIM_NONE;
-  obj->string_delim = YRC_STRING_DELIM_NONE;
-  obj->last_char = 0;
-  obj->fpos = 0;
-  obj->col = 0;
-  obj->line = 1;
-  obj->last_fpos = 0;
-  obj->last_col = 0;
-  obj->last_line = 1;
+
+  obj->chunksz = chunksz;
+  obj->data = malloc(chunksz);
+  if (obj->data == NULL) {
+    free(obj);
+    return 1;
+  }
+
   if (yrc_llist_init(&obj->tokens)) {
+    free(obj->data);
+    free(obj);
     return 1;
   }
 
-  if (yrc_accum_init(&obj->accum_primary, 512)) {
+  if (yrc_accum_init(&obj->primary, 512)) {
+    free(obj->data);
     yrc_llist_free(obj->tokens);
     free(obj);
     return 1;
   }
 
-  if (yrc_accum_init(&obj->accum_secondary, 32)) {
+  if (yrc_accum_init(&obj->secondary, 32)) {
+    free(obj->data);
     yrc_llist_free(obj->tokens);
-    yrc_accum_free(obj->accum_primary);
+    yrc_accum_free(obj->primary);
     free(obj);
     return 1;
   }
 
-  obj->op_last =
-  obj->op_current = NULL;
+  obj->fpos =
+  obj->line =
+  obj->col = 0;
 
+  obj->offset =
+  obj->start =
+  obj->size = 0;
   *state = obj;
   return 0;
 }
 
 
+int _free_tokens(void* raw, size_t idx, void* ctx, int* stop) {
+  yrc_token_t* token = (yrc_token_t*)raw;
+  switch (token->type) {
+    case YRC_TOKEN_STRING:
+      free(token->info.as_string.data);
+      break;
+    case YRC_TOKEN_IDENT:
+      free(token->info.as_ident.data);
+      break;
+    case YRC_TOKEN_COMMENT:
+      free(token->info.as_comment.data);
+      break;
+    case YRC_TOKEN_WHITESPACE:
+      free(token->info.as_whitespace.data);
+      break;
+  }
+  free(token);
+  return 0;
+}
+
+
 int yrc_tokenizer_free(yrc_tokenizer_t* state) {
-  yrc_accum_free(state->accum_secondary);
-  yrc_accum_free(state->accum_primary);
+  free(state->data);
+  yrc_llist_iter(state->tokens, _free_tokens, NULL);
+  yrc_llist_free(state->tokens);
+  yrc_accum_free(state->secondary);
+  yrc_accum_free(state->primary);
   free(state);
   return 0;
 }
 
-
-int _yrc_run_default(yrc_tokenizer_t* state, char* data, size_t size, size_t* offs) {
-  DEBUG_VISIT(_yrc_run_default)
-  yrc_token_t* tk;
-  char peek;
-
-  state->last_fpos = state->fpos;
-  state->last_line = state->line;
-  state->last_col = state->col;
-
-  peek = data[*offs];
-  switch (peek) {
-    case '\0':
-      state->state = YRC_TKS_DONE;
-      return 0;
-    case '"':
-      state->state = YRC_TKS_STRING;
-      state->string_delim = YRC_STRING_DELIM_DOUBLE;
-      ++*offs;
-      ++state->fpos;
-      ++state->col;
-      return 0;
-    case '\'':
-      state->state = YRC_TKS_STRING;
-      state->string_delim = YRC_STRING_DELIM_SINGLE;
-      ++*offs;
-      ++state->fpos;
-      ++state->col;
-      return 0;
-#define XX(a) case a:
-    WHITESPACE_MAP(XX)
-      state->state = YRC_TKS_WHITESPACE;
-      return 0;
-    FASTOP_MAP(XX)
-      tk = _add_token(state, YRC_TOKEN_OPERATOR);
-      if (tk == NULL) {
-        return 1;
-      }
-      tk->info.as_operator = _string_to_operator(data + *offs, 1);
-      ++*offs;
-      ++state->fpos;
-      ++state->col;
-      break;
-    NUMERIC_MAP(XX)
-      state->last_char = 0;
-      state->seen_flags = 0;
-      state->state = YRC_TKS_NUMBER;
-      break;
-    OPERATOR_MAP(XX)
-      state->op_last =
-      state->op_current = &OP_ROOT;
-      state->state = YRC_TKS_OPERATOR;
-      break;
-    ALPHA_MAP(XX)
-      state->state = YRC_TKS_IDENTIFIER;
-      break;
-#undef XX
-  }
-
-  return 0;
-}
-
-
-int _yrc_run_string(yrc_tokenizer_t* state, char* data, size_t size, size_t* offs) {
-  DEBUG_VISIT(_yrc_run_string)
-
-  char delim = state->string_delim == YRC_STRING_DELIM_DOUBLE ? '"' : '\'';
-  yrc_tokenizer_state st = state->state;
-  size_t offset = *offs;
-  size_t diff;
-  size_t tokensize;
-  char* tokendata;
-  yrc_token_t* tk;
-
-  while (offset < size) {
-    if (data[offset] == '\n' || data[offset] == '\0') {
-      return 1;
-    }
-
-    if (data[offset] == delim) {
-      st = YRC_TKS_DEFAULT;
-      break;
-    }
-
-    if (data[offset] == '\\') {
-      st = YRC_TKS_STRING_ESCAPE;
-      break;
-    }
-
-    ++offset;
-  }
-
-  state->state = st;
-  diff = offset - *offs;
-  state->fpos += diff;
-  state->col += diff;
-  if (yrc_accum_copy(state->accum_primary, data + *offs, diff)) {
-    return 1;
-  }
-  *offs = offset;
-  if (offset == size) {
-    return 0;
-  }
-  ++*offs;
-  ++state->fpos;
-  ++state->col;
-  if (st == YRC_TKS_STRING_ESCAPE) {
-    return 0;
-  }
-  if (yrc_accum_export(state->accum_primary, &tokendata, &tokensize)) {
-    return 1;
-  }
-  tk = _add_token(state, YRC_TOKEN_STRING);
-  if (tk == NULL) {
-    return 1;
-  }
-  tk->info.as_string.delim = state->string_delim;
-  tk->info.as_string.data = tokendata;
-  tk->info.as_string.size = tokensize;
-  return 0;
-}
-
-
-int _yrc_run_whitespace(yrc_tokenizer_t* state, char* data, size_t size, size_t* offs) {
-  DEBUG_VISIT(_yrc_run_whitespace)
-
-  size_t tokensize;
-  size_t offset;
-  size_t diff;
-  char* tokendata;
-  yrc_token_t* tk;
-
-  offset = *offs;
-#define XX(a) data[offset] == a || 
-  while (offset < size && (WHITESPACE_MAP(XX) 0)) {
-#undef XX
-    _take(state, data[offset]);
-    ++offset;
-  }
-
-  diff = offset - *offs;
-  if (yrc_accum_copy(state->accum_primary, data + *offs, diff)) {
-    return 1;
-  }
-  *offs = offset;
-
-  if (offset == size) {
-    return 0;
-  }
-
-  if (yrc_accum_export(state->accum_primary, &tokendata, &tokensize)) {
-    return 1;
-  }
-
-  tk = _add_token(state, YRC_TOKEN_WHITESPACE);
-  if (tk == NULL) {
-    return 1;
-  }
-  tk->info.as_whitespace.data = tokendata;
-  tk->info.as_whitespace.size = tokensize;
-  tk->info.as_whitespace.has_newline = state->line != state->last_line;
-  return 0;
-}
-
-
-int _yrc_run_string_escape(yrc_tokenizer_t* state, char* data, size_t size, size_t* offs) {
-  DEBUG_VISIT(_yrc_run_string_escape)
-
-  switch (data[*offs]) {
-    case 'u':
-    case 'U':
-      state->state = YRC_TKS_STRING_UNICODE;
-      break;
-    case 'x':
-    case 'X':
-      state->state = YRC_TKS_STRING_HEX;
-    break;
-    case '\\':
-      state->state = YRC_TKS_STRING;
-      yrc_accum_push(state->accum_primary, '\\');
-      break;
-    case '"':
-      state->state = YRC_TKS_STRING;
-      yrc_accum_push(state->accum_primary, '"');
-      break;
-    case '\'':
-      state->state = YRC_TKS_STRING;
-      yrc_accum_push(state->accum_primary, '\'');
-      break;
-    case 'n':
-      state->state = YRC_TKS_STRING;
-      yrc_accum_push(state->accum_primary, '\n');
-      break;
-    case 't':
-      state->state = YRC_TKS_STRING;
-      yrc_accum_push(state->accum_primary, '\t');
-      break;
-    case 'r':
-      state->state = YRC_TKS_STRING;
-      yrc_accum_push(state->accum_primary, '\r');
-      break;
-    case 'v':
-      state->state = YRC_TKS_STRING;
-      yrc_accum_push(state->accum_primary, '\v');
-      break;
-    case 'b':
-      state->state = YRC_TKS_STRING;
-      yrc_accum_push(state->accum_primary, '\b');
-      break;
-    case 'f':
-      state->state = YRC_TKS_STRING;
-      yrc_accum_push(state->accum_primary, '\f');
-      break;
-    case '0':
-      state->state = YRC_TKS_STRING;
-      yrc_accum_push(state->accum_primary, '\0');
-      break;
-    default:
-      return 1;
-  }
-  ++*offs;
-  ++state->fpos;
-  ++state->col;
-  return 0;
-}
-
-
-int _yrc_run_string_unicode(yrc_tokenizer_t* state, char* data, size_t size, size_t* offs) {
-  DEBUG_VISIT(_yrc_run_string_unicode)
-
-  size_t offset = *offs;
-  return 0;
-}
-
-
-int _yrc_run_string_hex(yrc_tokenizer_t* state, char* data, size_t size, size_t* offs) {
-  DEBUG_VISIT(_yrc_run_string_hex)
-
-  size_t offset = *offs;
-  return 0;
-}
-
-int _yrc_run_number(yrc_tokenizer_t* state, char* data, size_t size, size_t* offs) {
-  DEBUG_VISIT(_yrc_run_number)
-  size_t tokensize;
-  size_t offset;
-  size_t diff;
-  char* tokendata;
-  char last_char = state->last_char;
-  yrc_token_t* tk;
-  offset = *offs;
-
-  while (offset < size) {
-    switch (data[offset]) {
-      case '.':
-      // decimal!
-      if (state->seen_flags & REPR_SEEN_ANY) {
-        state->state = YRC_TKS_DEFAULT;
-        goto exit;
-      }
-      state->seen_flags |= REPR_SEEN_DOT;
-      break;
-      case 'a': case 'A':
-      case 'b': case 'B':
-      case 'c': case 'C':
-      case 'd': case 'D':
-      case 'f': case 'F':
-      if (state->seen_flags & REPR_SEEN_HEX) {
-        break;
-      }
-      return 1;
-      case 'e':
-      case 'E':
-      if (state->seen_flags & REPR_SEEN_HEX) {
-        break;
-      }
-      if (state->seen_flags & REPR_SEEN_EXP) {
-        return 1;
-      }
-      state->seen_flags |= data[offset] == 'e' ? REPR_SEEN_EXP_LE : REPR_SEEN_EXP_BE;
-      break;
-      case 'x':
-      if (last_char != '0') {
-        return 1;
-      }
-      state->seen_flags |= REPR_SEEN_HEX;
-      break;
-#define XX(a) case a:
-      NUMERIC_MAP(XX)
-#undef XX
-      break;
-      default:
-      state->state = YRC_TKS_DEFAULT;
-      goto exit;
-    }
-    last_char = data[offset];
-    ++offset;
-  }
-exit:
-  state->last_char = last_char;
-  diff = offset - *offs;
-  state->fpos += diff;
-  state->col += diff;
-  if (yrc_accum_copy(state->accum_secondary, data + *offs, diff)) {
-    return 1;
-  }
-  *offs = offset;
-
-  if (offset == size) {
-    return 0;
-  }
-
-  yrc_accum_push(state->accum_secondary, '\0');
-  if (yrc_accum_borrow(state->accum_secondary, &tokendata, &tokensize)) {
-    return 1;
-  }
-  tk = _add_token(state, YRC_TOKEN_NUMBER);
-  if (tk == NULL) {
-    return 1;
-  }
-  tk->info.as_number.repr = state->seen_flags;
-  if (state->seen_flags & (REPR_SEEN_DOT | REPR_SEEN_EXP)) {
-    tk->info.as_number.repr |= REPR_IS_FLOAT;
-    tk->info.as_number.data.as_double = strtod(tokendata, NULL);
-  } else {
-    tk->info.as_number.data.as_int = strtoll(
-      state->seen_flags & REPR_SEEN_HEX ? tokendata + 2 : tokendata,
-      NULL,
-      state->seen_flags & REPR_SEEN_HEX ? 16 : 10
-    );
-  }
-  yrc_accum_discard(state->accum_secondary);
-
-  return 0;
-}
-
-int _is_kw(yrc_tokenizer_t* state) {
-  return 0;
-}
-
-void _advance_op(yrc_tokenizer_t* state, char ch) {
+void _advance_op(yrc_op_t** op_current, yrc_op_t** op_last, char ch) {
   size_t i;
   size_t j;
-  if (state->op_current == NULL) {
+  if ((*op_current) == NULL) {
     return;
   }
-  if (state->op_current == &OP_ROOT) {
+  if ((*op_current) == &OP_ROOT) {
     for (i = 0; i < sizeof OPERATORS; ++i) {
       if (OPERATORS[i]->c == ch) {
-        state->op_current = OPERATORS[i];
+        (*op_current) = OPERATORS[i];
         return;
       }
     }
 
-    state->op_current = NULL;
+    (*op_current) = NULL;
     return;
   }
 
-  for (i = 0; i < 4 && state->op_current->next[i]; ++i) {
-    if (state->op_current->next[i]->c == ch) {
-      state->op_last = state->op_current;
-      state->op_current = state->op_current->next[i];
+  for (i = 0; i < 4 && (*op_current)->next[i]; ++i) {
+    if ((*op_current)->next[i]->c == ch) {
+      (*op_last) = (*op_current);
+      (*op_current) = (*op_current)->next[i];
       return;
     }
   }
 
-  if (state->op_last == &OP_ROOT) {
-    state->op_last = state->op_current;
-    state->op_current = NULL;
+  if ((*op_last) == &OP_ROOT) {
+    (*op_last) = (*op_current);
+    (*op_current) = NULL;
     return;
   }
 
-  for(i = 0; i < 4 && state->op_last->next[i]; ++i) {
-    if(state->op_last->next[i] == state->op_current) {
-      for(j = i + 1; j < 4 && state->op_last->next[j]; ++j) {
-        if(state->op_last->next[j]->c == ch) {
-          state->op_current = state->op_last->next[j];
+  for(i = 0; i < 4 && (*op_last)->next[i]; ++i) {
+    if((*op_last)->next[i] == (*op_current)) {
+      for(j = i + 1; j < 4 && (*op_last)->next[j]; ++j) {
+        if((*op_last)->next[j]->c == ch) {
+          (*op_current) = (*op_last)->next[j];
 
           return;
         }
       }
 
-      state->op_current = NULL;
+      (*op_current) = NULL;
       return;
     }
   }
 
-  state->op_last = state->op_current;
-  state->op_current = NULL;
+  (*op_last) = (*op_current);
+  (*op_current) = NULL;
 }
 
 
-int _yrc_run_identifier(yrc_tokenizer_t* state, char* data, size_t size, size_t* offs) {
-  DEBUG_VISIT(_yrc_run_identifier)
+#define TO_CASE(a) case a:
 
-  size_t tokensize;
-  size_t offset;
-  size_t diff;
-  char* tokendata;
-  yrc_token_t* tk;
-
-  offset = *offs;
-#define XX(a) data[offset] == a || 
-  while (offset < size && (ALPHANUMERIC_MAP(XX) 0)) {
-#undef XX
-    ++offset;
-  }
-
-  diff = offset - *offs;
-  state->fpos += diff;
-  state->col += diff;
-  if (yrc_accum_copy(state->accum_primary, data + *offs, diff)) {
-    return 1;
-  }
-  *offs = offset;
-
-  if (offset == size) {
-    return 0;
-  }
-
-  if (yrc_accum_export(state->accum_primary, &tokendata, &tokensize)) {
-    return 1;
-  }
-
-  tk = _add_token(state, _is_kw(state) ? YRC_TOKEN_KEYWORD : YRC_TOKEN_IDENT);
-  if (tk == NULL) {
-    return 1;
-  }
-  tk->info.as_ident.data = tokendata;
-  tk->info.as_ident.size = tokensize;
+int _is_kw(yrc_tokenizer_t* state) {
   return 0;
 }
 
-
-int _yrc_run_operator(yrc_tokenizer_t* state, char* data, size_t size, size_t* offs) {
-  DEBUG_VISIT(_yrc_run_operator)
-
-  size_t tokensize;
-  size_t offset;
-  size_t diff;
-  char* tokendata;
-  yrc_token_t* tk;
-
-  offset = *offs;
-#define XX(a) data[offset] == a || 
-  while (offset < size && (OPERATOR_MAP(XX) 0)) {
-#undef XX
-    _advance_op(state, data[offset]);
-    if (state->op_current == NULL) {
-      break;
-    }
-
-    ++offset;
-
-    if (state->op_last == &SOLIDUS_EQ_TERM_NUL) {
-      if (state->op_current == &STAR_NUL) {
-        state->state = YRC_TKS_COMMENT_BLOCK;
-        state->last_char = '\0';
-        return 0;
-      }
-      if (state->op_current == &SOLIDUS_NUL) {
-        state->state = YRC_TKS_COMMENT_LINE;
-        return 0;
-      }
-    }
-    if (state->op_last->next[0] == &OP_TERM ||
-        state->op_last->next[1] == &OP_TERM ||
-        state->op_last->next[2] == &OP_TERM ||
-        state->op_last->next[3] == &OP_TERM) {
-      break;
-    }
-  }
-
-  diff = offset - *offs;
-  state->fpos += diff;
-  state->col += diff;
-  if (yrc_accum_copy(state->accum_secondary, data + *offs, diff)) {
-    return 1;
-  }
-  *offs = offset;
-  if (offset == size) {
-    return 0;
-  }
-  if (yrc_accum_borrow(state->accum_secondary, &tokendata, &tokensize)) {
-    return 1;
-  }
-  tk = _add_token(state, YRC_TOKEN_OPERATOR);
-  if (tk == NULL) {
-    return 1;
-  }
-  tk->info.as_operator = _string_to_operator(tokendata, tokensize);
-  yrc_accum_discard(state->accum_secondary);
-  return 0;
-}
-
-
-int _yrc_run_comment_line(yrc_tokenizer_t* state, char* data, size_t size, size_t* offs) {
-  DEBUG_VISIT(_yrc_run_comment_line)
-
-  yrc_tokenizer_state st = state->state;
-  size_t offset = *offs;
-  size_t diff;
-  size_t tokensize;
-  char* tokendata;
-  yrc_token_t* tk;
-
-  while (offset < size) {
-    if (data[offset] == '\n' || data[offset] == '\0') {
-      st = YRC_TKS_DEFAULT;
-      break;
-    }
-    ++offset;
-  }
-
-  state->state = st;
-  diff = offset - *offs;
-  state->fpos += diff;
-  state->col += diff;
-  if (yrc_accum_copy(state->accum_primary, data + *offs, diff)) {
-    return 1;
-  }
-  *offs = offset;
-  if (offset == size) {
-    return 0;
-  }
-  if (yrc_accum_export(state->accum_primary, &tokendata, &tokensize)) {
-    return 1;
-  }
-  tk = _add_token(state, YRC_TOKEN_COMMENT);
-  if (tk == NULL) {
-    return 1;
-  }
-  tk->info.as_comment.delim = 0;
-  tk->info.as_comment.data = tokendata;
-  tk->info.as_comment.size = tokensize;
-  return 0;
-}
-
-
-int _yrc_run_comment_block(yrc_tokenizer_t* state, char* data, size_t size, size_t* offs) {
-  DEBUG_VISIT(_yrc_run_comment_block)
-
-  yrc_tokenizer_state st = state->state;
-  size_t offset = *offs;
-  size_t diff;
-  size_t tokensize;
-  char* tokendata;
-  yrc_token_t* tk;
-  char last_char = state->last_char;
-
-  while (offset < size) {
-    if (data[offset] == '/' && last_char == '*') {
-      st = YRC_TKS_DEFAULT;
-      ++offset;
-      break;
-    }
-    if (data[offset] == '\0') {
+int is_ws(char ch) {
+  switch(ch) {
+    WHITESPACE_MAP(TO_CASE)
       return 1;
-    }
-    last_char = data[offset];
-    ++offset;
   }
-
-  state->last_char = last_char;
-  state->state = st;
-  diff = offset - *offs;
-  state->fpos += diff;
-  state->col += diff;
-  if (yrc_accum_copy(state->accum_primary, data + *offs, diff)) {
-    return 1;
-  }
-  *offs = offset;
-  if (offset == size) {
-    return 0;
-  }
-  if (yrc_accum_export(state->accum_primary, &tokendata, &tokensize)) {
-    return 1;
-  }
-  tk = _add_token(state, YRC_TOKEN_COMMENT);
-  if (tk == NULL) {
-    return 1;
-  }
-  tk->info.as_comment.delim = 1;
-  tk->info.as_comment.data = tokendata;
-  tk->info.as_comment.size = tokensize;
   return 0;
 }
 
+int is_op(char ch) {
+  switch(ch) {
+    OPERATOR_MAP(TO_CASE)
+      return 1;
+  }
+  return 0;
+}
 
-int yrc_tokenizer_advance(yrc_tokenizer_t* state, char* data, size_t size) {
-  size_t offs;
-  int err;
-  offs = 0;
+int is_alnum(char ch) {
+  switch(ch) {
+    ALPHANUMERIC_MAP(TO_CASE)
+      return 1;
+  }
+  return 0;
+}
 
-  while (offs < size) {
-    switch (state->state) {
-      case YRC_TKS_ERROR: return 1;
-      case YRC_TKS_DONE: return 0;
-#define XX(a, b) \
-    case YRC_TKS_##a: \
-      err = _yrc_run_##b(state, data, size, &offs);\
-      if (err) {\
-        state->state = YRC_TKS_ERROR;\
-        return -err;\
+#define STATE(DISCRIM, TARGET, POSTCASE, AS, SETUP) {\
+  while(offset < size) { \
+    DISCRIM\
+    last = data[offset];\
+    ++offset;\
+  }\
+  diff = offset - start;\
+  fpos += diff;\
+  col += diff;\
+  if (yrc_accum_copy(TARGET, data + start, diff)) {\
+    return 1;\
+  }\
+  start = offset;\
+  if (offset == size) {\
+    break;\
+  }\
+  if (yrc_accum_##POSTCASE(TARGET, &tokendata, &tokensize)) {\
+    return 1;\
+  }\
+  tk = malloc(sizeof(*tk));\
+  if (tk == NULL) {\
+    return 1;\
+  }\
+  tk->type = AS;\
+  SETUP\
+  goto export;\
+}
+
+#define STATE_EXPORT(DISCRIM, TARGET, AS, SETUP) \
+  STATE(DISCRIM, TARGET, export, AS, SETUP)
+
+#define STATE_BORROW(DISCRIM, TARGET, AS, SETUP)\
+  STATE(DISCRIM, TARGET, borrow, AS, {\
+    SETUP\
+    if (yrc_accum_discard(TARGET)) {\
+      return 1;\
+    }\
+  })
+
+/**
+  tokenizer states -- distinct from
+  token types, since the tokenizer can be
+  parsing a subset of a given token (e.g.,
+  unicode escapes in a string) that are part
+  of a larger token type.
+**/
+#define STATE_MAP(XX, TO_CASE) \
+  XX(DEFAULT, default, {\
+    if (eof) {\
+      state = YRC_TKS_DONE;\
+      return 0;\
+    }\
+    switch (data[offset]) {\
+      case '"':\
+        state = YRC_TKS_STRING;\
+        delim = '"';\
+        ++offset;\
+        ++fpos;\
+        ++col;\
+        goto restart;\
+      case '\'':\
+        state = YRC_TKS_STRING;\
+        delim = '\'';\
+        ++offset;\
+        ++fpos;\
+        ++col;\
+        goto restart;\
+      WHITESPACE_MAP(TO_CASE)\
+        state = YRC_TKS_WHITESPACE;\
+        goto restart;\
+      FASTOP_MAP(TO_CASE)\
+        tk = malloc(sizeof(*tk));\
+        if (tk == NULL) {\
+          return 1;\
+        }\
+        tk->info.as_operator = _string_to_operator(data + offset, 1, 0);\
+        ++offset;\
+        ++fpos;\
+        ++col;\
+        break;\
+      NUMERIC_MAP(TO_CASE)\
+        last = 0;\
+        flags = 0;\
+        state = YRC_TKS_NUMBER;\
+        break;\
+      OPERATOR_MAP(TO_CASE)\
+        op_last = op_current = &OP_ROOT;\
+        state = YRC_TKS_OPERATOR;\
+        break;\
+      ALPHA_MAP(TO_CASE)\
+        state = YRC_TKS_IDENTIFIER;\
+        break;\
+    }\
+  }) \
+  XX(WHITESPACE, whitespace, {\
+    while(offset < size) { \
+      if (eof || !is_ws(data[offset])) {\
+        state = YRC_TKS_DEFAULT;\
+        break;\
       }\
-      break;
-  YRC_TOKENIZER_STATE_MAP(XX)
+      if (data[offset] == '\n') {\
+        ++line;\
+        col = 0;\
+      } else {\
+        ++col;\
+      }\
+      last = data[offset];\
+      ++offset;\
+    }\
+    diff = offset - start;\
+    fpos += diff;\
+    if (yrc_accum_copy(primary, data + start, diff)) {\
+      return 1;\
+    }\
+    start = offset;\
+    if (offset == size) {\
+      break;\
+    }\
+    if (yrc_accum_export(primary, &tokendata, &tokensize)) {\
+      return 1;\
+    }\
+    tk = malloc(sizeof(*tk));\
+    if (tk == NULL) {\
+      return 1;\
+    }\
+    tk->type = YRC_TOKEN_WHITESPACE;\
+    tk->info.as_whitespace.data = tokendata;\
+    tk->info.as_whitespace.size = tokensize;\
+    tk->info.as_whitespace.has_newline = line != last_line;\
+    goto export;\
+  })\
+  XX(STRING, string, STATE_EXPORT({\
+    if (eof || data[offset] == '\n') {\
+      return 1;\
+    }\
+    if (data[offset] == delim) {\
+      state = YRC_TKS_DEFAULT;\
+      break;\
+    }\
+    if (data[offset] == '\\') {\
+      ++col;\
+      ++fpos;\
+      ++offset;\
+      state = YRC_TKS_STRING_ESCAPE;\
+      goto restart;\
+    }\
+  }, primary, YRC_TOKEN_STRING, {\
+    ++col;\
+    ++fpos;\
+    ++offset;\
+    tk->info.as_string.delim = delim == '\'' ? YRC_STRING_DELIM_SINGLE : YRC_STRING_DELIM_DOUBLE;\
+    tk->info.as_string.data = tokendata;\
+    tk->info.as_string.size = tokensize;\
+  })) \
+  XX(STRING_ESCAPE, string_escape, {\
+    ++col;\
+    ++fpos;\
+    ++offset;\
+    switch (data[offset - 1]) {\
+      case 'u':\
+      case 'U':\
+        state = YRC_TKS_STRING_UNICODE;\
+        goto restart;\
+      case 'x':\
+      case 'X':\
+        state = YRC_TKS_STRING_HEX;\
+        goto restart;\
+      default:\
+        return 1;\
+      case '\\':\
+        state = YRC_TKS_STRING;\
+        yrc_accum_push(primary, '\\');\
+        break;\
+      case '"':\
+        state = YRC_TKS_STRING;\
+        yrc_accum_push(primary, '"');\
+        break;\
+      case '\'':\
+        state = YRC_TKS_STRING;\
+        yrc_accum_push(primary, '\'');\
+        break;\
+      case 'n':\
+        state = YRC_TKS_STRING;\
+        yrc_accum_push(primary, '\n');\
+        printf("push newline\n");\
+        break;\
+      case 't':\
+        state = YRC_TKS_STRING;\
+        yrc_accum_push(primary, '\t');\
+        break;\
+      case 'r':\
+        state = YRC_TKS_STRING;\
+        yrc_accum_push(primary, '\r');\
+        break;\
+      case 'v':\
+        state = YRC_TKS_STRING;\
+        yrc_accum_push(primary, '\v');\
+        break;\
+      case 'b':\
+        state = YRC_TKS_STRING;\
+        yrc_accum_push(primary, '\b');\
+        break;\
+      case 'f':\
+        state = YRC_TKS_STRING;\
+        yrc_accum_push(primary, '\f');\
+        break;\
+      case '0':\
+        state = YRC_TKS_STRING;\
+        yrc_accum_push(primary, '\0');\
+        break;\
+    }\
+  }) \
+  XX(STRING_UNICODE, string_unicode, {}) \
+  XX(STRING_HEX, string_hex, {}) \
+  XX(NUMBER, number, STATE_BORROW({\
+    should_break = 0;\
+    switch (data[offset]) {\
+      case '.':\
+      if (flags & REPR_SEEN_ANY) {\
+        state = YRC_TKS_DEFAULT;\
+        should_break = 1;\
+        break;\
+      }\
+      flags |= REPR_SEEN_DOT;\
+      break;\
+      case 'a': case 'A':\
+      case 'b': case 'B':\
+      case 'c': case 'C':\
+      case 'd': case 'D':\
+      case 'f': case 'F':\
+      if (flags & REPR_SEEN_HEX) {\
+        break;\
+      }\
+      return 1;\
+      case 'e':\
+      case 'E':\
+      if (flags & REPR_SEEN_HEX) {\
+        break;\
+      }\
+      if (flags & REPR_SEEN_EXP) {\
+        return 1;\
+      }\
+      flags |= data[offset] == 'e' ? REPR_SEEN_EXP_LE : REPR_SEEN_EXP_BE;\
+      break;\
+      case 'x':\
+      if (last != '0') {\
+        return 1;\
+      }\
+      flags |= REPR_SEEN_HEX;\
+      break;\
+      case '0': case '1': case '2':\
+      case '3': case '4': case '5':\
+      case '6': case '7': case '8':\
+      case '9': break;\
+      default:\
+      state = YRC_TKS_DEFAULT;\
+      should_break = 1;\
+      break;\
+    }\
+    if (should_break) { should_break = 0; break; }\
+  }, secondary, YRC_TOKEN_NUMBER, {\
+  tk->info.as_number.repr = flags;\
+  if (flags & (REPR_SEEN_DOT | REPR_SEEN_EXP)) {\
+    tk->info.as_number.repr |= REPR_IS_FLOAT;\
+    tk->info.as_number.data.as_double = strtod(tokendata, NULL);\
+  } else {\
+    tk->info.as_number.data.as_int = strtoll(\
+      flags & REPR_SEEN_HEX ? tokendata + 2 : tokendata,\
+      NULL,\
+      flags & REPR_SEEN_HEX ? 16 : 10\
+    );\
+  }\
+  })) \
+  XX(IDENTIFIER, identifier, STATE_EXPORT({\
+    if (eof || !is_alnum(data[offset])) {\
+      state = YRC_TKS_DEFAULT;\
+      break;\
+    }\
+  }, primary, YRC_TOKEN_IDENT, {\
+    tk->info.as_ident.data = tokendata;\
+    tk->info.as_ident.size = tokensize;\
+  })) \
+  XX(OPERATOR, operator, STATE_BORROW({\
+    if (!is_op(data[offset])) {\
+      state = YRC_TKS_DEFAULT;\
+      break;\
+    }\
+    _advance_op(&op_current, &op_last, data[offset]);\
+    if (op_current == NULL) {\
+      state = YRC_TKS_DEFAULT;\
+      break;\
+    }\
+    if (op_last == &SOLIDUS_EQ_TERM_NUL) {\
+      if (op_current == &STAR_NUL) {\
+        state = YRC_TKS_COMMENT_BLOCK;\
+        last = '\0';\
+        goto restart;\
+      }\
+      if (op_current == &SOLIDUS_NUL) {\
+        state = YRC_TKS_COMMENT_LINE;\
+        goto restart;\
+      }\
+    }\
+    if (op_last->next[0] == &OP_TERM ||\
+        op_last->next[1] == &OP_TERM ||\
+        op_last->next[2] == &OP_TERM ||\
+        op_last->next[3] == &OP_TERM) {\
+      break;\
+    }\
+  }, secondary, YRC_TOKEN_OPERATOR, {\
+    tk->info.as_operator = _string_to_operator(tokendata, tokensize, 0);\
+  }))\
+  XX(COMMENT_LINE, comment_line, STATE_EXPORT({\
+    if (data[offset] == '\n') {\
+      state = YRC_TKS_DEFAULT;\
+      break;\
+    }\
+  }, primary, YRC_TOKEN_COMMENT, {\
+    tk->info.as_comment.delim = 0;\
+    tk->info.as_comment.data = tokendata;\
+    tk->info.as_comment.size = tokensize;\
+  }))\
+  XX(COMMENT_BLOCK, comment_block, STATE_EXPORT({\
+    if (eof) return 1;\
+    if (data[offset] == '/' && last == '*') {\
+      state = YRC_TKS_DEFAULT;\
+      break;\
+    }\
+  }, primary, YRC_TOKEN_COMMENT, {\
+    tk->info.as_comment.delim = 1;\
+    tk->info.as_comment.data = tokendata;\
+    tk->info.as_comment.size = tokensize;\
+  }))
+
+enum {
+#define XX(a, b, c) YRC_TKS_##a,
+  STATE_MAP(XX, TO_CASE)
 #undef XX
+  YRC_TKS_ERROR,
+  YRC_TKS_DONE
+};
+
+#define LOAD(x) \
+  start = x->start;\
+  data = x->data;\
+  last_fpos = fpos = x->fpos;\
+  last_line = line = x->line;\
+  last_col = col = x->col;\
+  offset = x->offset;\
+  size = x->size;\
+  primary = x->primary;\
+  secondary = x->primary;
+
+#define STORE(x) \
+  x->start = start;\
+  x->fpos = fpos;\
+  x->line = line;\
+  x->col = col;\
+  x->offset = offset;\
+  x->size = size;
+
+int yrc_tokenizer_scan(yrc_tokenizer_t* tokenizer, yrc_readcb read, yrc_token_t** out) {
+  uint64_t last_fpos, last_line, last_col, fpos, line, col;
+  yrc_tokenizer_state state = YRC_TKS_DEFAULT;
+  size_t offset, start, diff, size, tokensize;
+  yrc_accum_t *primary, *secondary;
+  yrc_op_t *op_current, *op_last;
+  char *tokendata, *data, last;
+  char should_break = 0;
+  yrc_token_t* tk;
+  int eof = 0;
+  char flags;
+  char delim;
+
+  LOAD(tokenizer);
+  while (!eof) {
+    if (offset == size) {
+      size = read(tokenizer->data, tokenizer->chunksz);
+      start = offset = 0;
     }
+
+    if (size == 0) {
+      eof = 1;
+    }
+
+restart:
+    do {
+      start = offset;
+      switch (state) {
+#define XX(TOKEN_STATE, DESC, CODE) case YRC_TKS_##TOKEN_STATE: CODE; break;
+        STATE_MAP(XX, TO_CASE)
+#undef XX
+        default:
+          printf("in weird state %d", state);
+        break;
+      }
+    } while (offset < size);
   }
+  return 0;
+export:
+  tk->start.fpos = last_fpos;
+  tk->start.line = last_line;
+  tk->start.col = last_col;
+  tk->end.fpos = fpos;
+  tk->end.line = line;
+  tk->end.col = col;
+  if (yrc_llist_push(tokenizer->tokens, tk)) {
+    free(tk);
+    return 1;
+  }
+  *out = tk;
+  STORE(tokenizer);
   return 0;
 }
 
-
-int iter(void* item, size_t idx, void* ctx, int* stop) {
-  yrc_token_t* tk = item;
+void yrc_token_repr(yrc_token_t* tk) {
   printf("%llu:%llu %s <<", tk->start.line, tk->start.col, TOKEN_TYPES_MAP[tk->type]);
   switch (tk->type) {
     case YRC_TOKEN_COMMENT:
@@ -821,17 +705,9 @@ int iter(void* item, size_t idx, void* ctx, int* stop) {
     break;
   }
   printf(">>\n");
-  return 0;
 }
 
-
-int yrc_tokenizer_finish(yrc_tokenizer_t* state) {
-  char buf[1] = {0};
-  if (yrc_tokenizer_advance(state, buf, 1)) {
-    return 1;
-  }
-
-  state->state = YRC_TKS_DONE;
-  yrc_llist_iter(state->tokens, iter, NULL);
+int iter(void* item, size_t idx, void* ctx, int* stop) {
+  yrc_token_repr((yrc_token_t*)item);
   return 0;
 }

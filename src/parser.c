@@ -336,7 +336,7 @@ int _ident(yrc_parser_state_t* state, yrc_ast_node_t** out) {
   XX(exprrshfeq,     OPERATOR, as_operator == YRC_OP_RSHFEQ,     10, NULL, _assign, NULL)\
   XX(exprurshfeq,    OPERATOR, as_operator == YRC_OP_URSHFEQ,    10, NULL, _assign, NULL)
 
-static yrc_token_t eof = {YRC_EOF_TOKEN};
+static yrc_token_t eof = {YRC_TOKEN_EOF};
 static yrc_parser_symbol_t sym_ident = {_ident, NULL, NULL, 0};
 static yrc_parser_symbol_t sym_literal = {_literal, NULL, NULL, 0};
 static yrc_parser_symbol_t sym_eof = {NULL, NULL, NULL, 0};
@@ -460,7 +460,33 @@ int map_ident(void* item, void** out, size_t idx, void* ctx) {
   return 0;
 }
 
-YRC_EXTERN int yrc_parse(yrc_tokenizer_t* tokenizer) {
+/* 16K chunks by default */
+#define CHUNK_SIZE 16384
+
+YRC_EXTERN int yrc_parse(yrc_readcb read) {
+  yrc_tokenizer_t* tokenizer;
+  yrc_token_t* token;
+
+  if (yrc_tokenizer_init(&tokenizer, CHUNK_SIZE)) {
+    return 1;
+  }
+
+  while (1) {
+    token = NULL;
+    if (yrc_tokenizer_scan(tokenizer, read, &token)) {
+      return 1;
+    }
+    if (token == NULL) {
+      break;
+    }
+    yrc_token_repr(token);
+  }
+
+  yrc_tokenizer_free(tokenizer);
+  return 0;
+}
+
+int _yrc_parse(yrc_tokenizer_t* tokenizer) {
   yrc_ast_node_program_t* program = malloc(sizeof(*program));
   yrc_parser_state_t parser;
   if (program == NULL) {
@@ -472,7 +498,7 @@ YRC_EXTERN int yrc_parse(yrc_tokenizer_t* tokenizer) {
   parser.symbol = NULL;
   parser.saw_newline = 0;
   yrc_llist_init(&parser.tokens);
-  yrc_llist_map(tokenizer->tokens, parser.tokens, map_ident, NULL);
+  //yrc_llist_map(tokenizer->tokens, parser.tokens, map_ident, NULL);
   if (advance(&parser)) {
     return 1;
   }
