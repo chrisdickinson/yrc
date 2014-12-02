@@ -70,6 +70,36 @@ yrc_op_t
   LT_EQ_NUL = {'<', {&OP_TERM, &EQ_NUL, 0}},
   LT_LT_EQ_NUL = {'<', {&LT_EQ_NUL, &EQ_NUL, &OP_TERM, 0}};
 
+void _dbg_op(yrc_op_t* op) {
+  if (op == &OP_ROOT) printf("OP_ROOT");
+  else if (op == &OP_TERM) printf("OP_TERM");
+  else if (op == &EQ_NUL) printf("EQ_NUL");
+  else if (op == &PLUS_NUL) printf("PLUS_NUL");
+  else if (op == &STAR_NUL) printf("STAR_NUL");
+  else if (op == &DASH_NUL) printf("DASH_NUL");
+  else if (op == &SOLIDUS_NUL) printf("SOLIDUS_NUL");
+  else if (op == &SOLIDUS_EQ_TERM_NUL) printf("SOLIDUS_EQ_TERM_NUL");
+  else if (op == &STAR_EQ_TERM_NUL) printf("STAR_EQ_TERM_NUL");
+  else if (op == &PLUS_PLUS_NUL) printf("PLUS_PLUS_NUL");
+  else if (op == &PLUS_PLUSPLUS_EQ_TERM_NUL) printf("PLUS_PLUSPLUS_EQ_TERM_NUL");
+  else if (op == &DASH_DASH_NUL) printf("DASH_DASH_NUL");
+  else if (op == &DASH_DASHDASH_EQ_TERM_NUL) printf("DASH_DASHDASH_EQ_TERM_NUL");
+  else if (op == &OP_OR_NUL) printf("OP_OR_NUL");
+  else if (op == &OR_OR_EQ_NUL) printf("OR_OR_EQ_NUL");
+  else if (op == &AND_NUL) printf("AND_NUL");
+  else if (op == &AND_AND_EQ_NUL) printf("AND_AND_EQ_NUL");
+  else if (op == &MOD_EQ_NUL) printf("MOD_EQ_NUL");
+  else if (op == &XOR_EQ_NUL) printf("XOR_EQ_NUL");
+  else if (op == &EQ_EQ_NUL) printf("EQ_EQ_NUL");
+  else if (op == &EQ_EQEQ_NUL) printf("EQ_EQEQ_NUL");
+  else if (op == &BANG_EQEQ_NUL) printf("BANG_EQEQ_NUL");
+  else if (op == &GT_EQ_NUL) printf("GT_EQ_NUL");
+  else if (op == &GT_GT_EQ_NUL) printf("GT_GT_EQ_NUL");
+  else if (op == &GT_GTGT_EQ_NUL) printf("GT_GTGT_EQ_NUL");
+  else if (op == &LT_EQ_NUL) printf("LT_EQ_NUL");
+  else if (op == &LT_LT_EQ_NUL) printf("LT_LT_EQ_NUL");
+}
+
 yrc_op_t* OPERATORS[] = {
   &OR_OR_EQ_NUL,
   &AND_AND_EQ_NUL,
@@ -264,7 +294,11 @@ int is_alnum(char ch) {
 }
 
 #define STATE(DISCRIM, TARGET, POSTCASE, AS, SETUP) {\
-  while(offset < size) { \
+  while(1) {\
+    if (offset == size && !eof) {\
+      pending_read = 1;\
+      break;\
+    }\
     DISCRIM\
     last = data[offset];\
     ++offset;\
@@ -276,7 +310,8 @@ int is_alnum(char ch) {
     return 1;\
   }\
   start = offset;\
-  if (offset == size) {\
+  if (pending_read) {\
+    pending_read = 0;\
     break;\
   }\
   if (yrc_accum_##POSTCASE(TARGET, &tokendata, &tokensize)) {\
@@ -338,11 +373,12 @@ int is_alnum(char ch) {
         if (tk == NULL) {\
           return 1;\
         }\
+        tk->type = YRC_TOKEN_OPERATOR;\
         tk->info.as_operator = _string_to_operator(data + offset, 1, 0);\
         ++offset;\
         ++fpos;\
         ++col;\
-        break;\
+        goto export;\
       NUMERIC_MAP(TO_CASE)\
         last = 0;\
         flags = 0;\
@@ -354,6 +390,11 @@ int is_alnum(char ch) {
         break;\
       ALPHA_MAP(TO_CASE)\
         state = YRC_TKS_IDENTIFIER;\
+        break;\
+      default:\
+        ++offset;\
+        ++fpos;\
+        ++col;\
         break;\
     }\
   }) \
@@ -403,10 +444,13 @@ int is_alnum(char ch) {
       break;\
     }\
     if (data[offset] == '\\') {\
+      state = YRC_TKS_STRING_ESCAPE;\
+      if (yrc_accum_copy(primary, data + start, offset - start)) {\
+        return 1;\
+      }\
       ++col;\
       ++fpos;\
       ++offset;\
-      state = YRC_TKS_STRING_ESCAPE;\
       goto restart;\
     }\
   }, primary, YRC_TOKEN_STRING, {\
@@ -447,7 +491,6 @@ int is_alnum(char ch) {
       case 'n':\
         state = YRC_TKS_STRING;\
         yrc_accum_push(primary, '\n');\
-        printf("push newline\n");\
         break;\
       case 't':\
         state = YRC_TKS_STRING;\
@@ -559,24 +602,30 @@ int is_alnum(char ch) {
       if (op_current == &STAR_NUL) {\
         state = YRC_TKS_COMMENT_BLOCK;\
         last = '\0';\
+        yrc_accum_discard(secondary);\
+        ++offset; ++fpos; ++col;\
         goto restart;\
       }\
       if (op_current == &SOLIDUS_NUL) {\
         state = YRC_TKS_COMMENT_LINE;\
+        yrc_accum_discard(secondary);\
+        ++offset; ++fpos; ++col;\
         goto restart;\
       }\
     }\
-    if (op_last->next[0] == &OP_TERM ||\
+    if (!op_current && (op_last->next[0] == &OP_TERM ||\
         op_last->next[1] == &OP_TERM ||\
         op_last->next[2] == &OP_TERM ||\
-        op_last->next[3] == &OP_TERM) {\
+        op_last->next[3] == &OP_TERM)) {\
+      state = YRC_TKS_DEFAULT;\
+      ++offset;\
       break;\
     }\
   }, secondary, YRC_TOKEN_OPERATOR, {\
     tk->info.as_operator = _string_to_operator(tokendata, tokensize, 0);\
   }))\
   XX(COMMENT_LINE, comment_line, STATE_EXPORT({\
-    if (data[offset] == '\n') {\
+    if (eof || data[offset] == '\n') {\
       state = YRC_TKS_DEFAULT;\
       break;\
     }\
@@ -589,12 +638,13 @@ int is_alnum(char ch) {
     if (eof) return 1;\
     if (data[offset] == '/' && last == '*') {\
       state = YRC_TKS_DEFAULT;\
+      ++offset;\
       break;\
     }\
   }, primary, YRC_TOKEN_COMMENT, {\
     tk->info.as_comment.delim = 1;\
     tk->info.as_comment.data = tokendata;\
-    tk->info.as_comment.size = tokensize;\
+    tk->info.as_comment.size = tokensize - 2;\
   }))
 
 enum {
@@ -636,12 +686,13 @@ int yrc_tokenizer_scan(yrc_tokenizer_t* tokenizer, yrc_readcb read, yrc_token_t*
   int eof = 0;
   char flags;
   char delim;
+  int pending_read = 0;
 
   LOAD(tokenizer);
   while (!eof) {
     if (offset == size) {
       size = read(tokenizer->data, tokenizer->chunksz);
-      start = offset = 0;
+      offset = 0;
     }
 
     if (size == 0) {
@@ -679,7 +730,7 @@ export:
 }
 
 void yrc_token_repr(yrc_token_t* tk) {
-  printf("%llu:%llu %s <<", tk->start.line, tk->start.col, TOKEN_TYPES_MAP[tk->type]);
+  printf("%llu:%llu %s ⊏ ", tk->start.line, tk->start.col, TOKEN_TYPES_MAP[tk->type]);
   switch (tk->type) {
     case YRC_TOKEN_COMMENT:
       fwrite(tk->info.as_comment.data, tk->info.as_comment.size, 1, stdout);
@@ -704,7 +755,7 @@ void yrc_token_repr(yrc_token_t* tk) {
       }
     break;
   }
-  printf(">>\n");
+  printf(" ⊐\n");
 }
 
 int iter(void* item, size_t idx, void* ctx, int* stop) {
