@@ -75,10 +75,10 @@ int yrc_llist_free(yrc_llist_t* list) {
 int yrc_llist_push(yrc_llist_t* list, void* item) {
   yrc_llist_node_t* node;
   node = malloc(sizeof(*node));
-  node->next = NULL;
   if (node == NULL) {
     return 1;
   }
+  node->next = NULL;
   node->item = item;
   if (list->head == NULL) {
     list->head = list->tail = node;
@@ -156,7 +156,7 @@ int yrc_llist_unshift(yrc_llist_t* list, void* item) {
   node->next = list->head;
   list->head = node;
   if (!list->tail) {
-    list->tail = node->next;
+    list->tail = node->next ? node->next : node;
   }
   ++list->size;
   return 0;
