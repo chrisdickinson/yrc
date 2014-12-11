@@ -1,11 +1,12 @@
 #ifndef _YRC_PARSER_H
 #define _YRC_PARSER_H
+#include "tokenizer.h"
 typedef struct yrc_ast_node_s yrc_ast_node_t;
 typedef struct yrc_parser_state_s yrc_parser_state_t;
 typedef struct yrc_parser_symbol_s yrc_parser_symbol_t;
 
 typedef int (*yrc_parser_led_t)(yrc_parser_state_t*, yrc_ast_node_t*, yrc_ast_node_t**);
-typedef int (*yrc_parser_nud_t)(yrc_parser_state_t*, yrc_ast_node_t**);
+typedef int (*yrc_parser_nud_t)(yrc_parser_state_t*, yrc_token_t*, yrc_ast_node_t**);
 typedef int (*yrc_parser_std_t)(yrc_parser_state_t*, yrc_ast_node_t**);
 
 typedef int64_t yrc_ast_node_type;

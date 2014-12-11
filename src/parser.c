@@ -1,6 +1,5 @@
 #include "yrc-common.h"
 #include "llist.h"
-#include "tokenizer.h"
 #include "parser.h"
 #include <stdlib.h> /* malloc + free */
 #include <stdio.h>
@@ -150,7 +149,7 @@ int NAME(yrc_parser_state_t* state, yrc_ast_node_t* left, yrc_ast_node_t** out) 
 }
 
 #define PREFIX(NAME, TYPE, BP, KIND, EXTRA)\
-int NAME(yrc_parser_state_t* state, yrc_ast_node_t** out) { \
+int NAME(yrc_parser_state_t* state, yrc_token_t* orig, yrc_ast_node_t** out) { \
   yrc_parser_symbol_t* sym = state->symbol;\
   yrc_token_t* token = state->token;\
   TYPE* node = malloc(sizeof(*node));\
@@ -193,7 +192,7 @@ PREFIX(_prefix, yrc_ast_node_unary_t, 0, YRC_AST_EXPR_UNARY, {
 })
 
 
-int _prefix_array(yrc_parser_state_t* state, yrc_ast_node_t** out) {
+int _prefix_array(yrc_parser_state_t* state, yrc_token_t* orig, yrc_ast_node_t** out) {
   yrc_ast_node_array_t* node = malloc(sizeof(*node));
   yrc_ast_node_t* item;
   if (yrc_llist_init(&node->elements)) {
@@ -223,12 +222,12 @@ cleanup:
 }
 
 
-int _prefix_object(yrc_parser_state_t* state, yrc_ast_node_t** out) {
+int _prefix_object(yrc_parser_state_t* state, yrc_token_t* orig, yrc_ast_node_t** out) {
   return 0;
 }
 
 
-int _prefix_paren(yrc_parser_state_t* state, yrc_ast_node_t** out) {
+int _prefix_paren(yrc_parser_state_t* state, yrc_token_t* orig, yrc_ast_node_t** out) {
   return 0;
 }
 
@@ -263,24 +262,23 @@ int _while(yrc_parser_state_t* state, yrc_ast_node_t** out) {
 }
 
 
-int _literal(yrc_parser_state_t* state, yrc_ast_node_t** out) {
+int _literal(yrc_parser_state_t* state, yrc_token_t* orig, yrc_ast_node_t** out) {
   yrc_ast_node_literal_t* node = malloc(sizeof(*node));
   if (node == NULL) {
     return 1;
   }
-  node->value = state->token;
+  node->value = orig;
   *out = (yrc_ast_node_t*)node;
   return 0;
 }
 
 
-int _ident(yrc_parser_state_t* state, yrc_ast_node_t** out) {
+int _ident(yrc_parser_state_t* state, yrc_token_t* orig, yrc_ast_node_t** out) {
   yrc_ast_node_ident_t* node = malloc(sizeof(*node));
-  printf("ident\n");
   if (node == NULL) {
     return 1;
   }
-  node->name = state->token;
+  node->name = orig;
   *out = (yrc_ast_node_t*)node;
   return 0;
 }
@@ -409,6 +407,9 @@ int advance(yrc_parser_state_t* parser) {
 SYMBOLS(STATE)
 #undef STATE
 
+  printf("unhandled token %d", token->type);
+  yrc_token_repr(token);
+  printf("\n");
   /* unhandled token */
   return 1;
 }
@@ -416,18 +417,22 @@ SYMBOLS(STATE)
 int expression(yrc_parser_state_t* parser, int rbp, yrc_ast_node_t** out) {
   yrc_ast_node_t* left = NULL;
   yrc_parser_symbol_t* sym = parser->symbol;
+  yrc_token_t* tok = parser->token;
   if (advance(parser)) {
     return 1;
   }
   if (sym->nud == NULL) {
     return 1;
   }
-  if (sym->nud(parser, &left)) {
+  if (sym->nud(parser, tok, &left)) {
     return 1;
   }
   while (rbp < parser->symbol->lbp) {
     sym = parser->symbol;
     if (advance(parser)) {
+      return 1;
+    }
+    if (sym->led == NULL) {
       return 1;
     }
     if (sym->led(parser, left, &left)) {
