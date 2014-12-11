@@ -20,6 +20,7 @@ struct yrc_tokenizer_s {
   size_t start;
   size_t size;
 
+  int eof;
   char* data;
   size_t chunksz;
   yrc_accum_t* primary;
@@ -664,6 +665,7 @@ enum {
   offset = x->offset;\
   size = x->size;\
   primary = x->primary;\
+  eof = x->eof;\
   secondary = x->primary;
 
 #define STORE(x) \
@@ -672,7 +674,8 @@ enum {
   x->line = line;\
   x->col = col;\
   x->offset = offset;\
-  x->size = size;
+  x->size = size;\
+  x->eof = eof;
 
 int yrc_tokenizer_scan(yrc_tokenizer_t* tokenizer, yrc_readcb read, yrc_token_t** out) {
   uint64_t last_fpos, last_line, last_col, fpos, line, col;
@@ -683,7 +686,7 @@ int yrc_tokenizer_scan(yrc_tokenizer_t* tokenizer, yrc_readcb read, yrc_token_t*
   char *tokendata, *data, last;
   char should_break = 0;
   yrc_token_t* tk;
-  int eof = 0;
+  int eof;
   char flags;
   char delim;
   int pending_read = 0;
@@ -712,6 +715,8 @@ restart:
       }
     } while (offset < size);
   }
+  *out = NULL;
+  STORE(tokenizer);
   return 0;
 export:
   tk->start.fpos = last_fpos;
@@ -757,6 +762,12 @@ void yrc_token_repr(yrc_token_t* tk) {
   }
   printf(" ⊐\n");
 }
+
+
+int yrc_tokenizer_eof(yrc_tokenizer_t* state) {
+  return state->eof;
+}
+
 
 int iter(void* item, size_t idx, void* ctx, int* stop) {
   yrc_token_repr((yrc_token_t*)item);

@@ -192,4 +192,5 @@ void yrc_token_repr(yrc_token_t*);
 int yrc_tokenizer_init(yrc_tokenizer_t**, size_t);
 int yrc_tokenizer_scan(yrc_tokenizer_t*, yrc_readcb, yrc_token_t**);
 int yrc_tokenizer_free(yrc_tokenizer_t*);
+int yrc_tokenizer_eof(yrc_tokenizer_t*);
 #endif
