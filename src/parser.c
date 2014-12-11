@@ -8,17 +8,21 @@
 #define IS_EOF(K) (K == &eof)
 #define IS_OP(K, T) (K->type == YRC_TOKEN_OPERATOR && K->info.as_operator == YRC_OP_##T)
 struct yrc_parser_state_s {
-  yrc_token_t* token;
-  yrc_parser_symbol_t* symbol;
-  yrc_llist_t* tokens;
-  int saw_newline;
+  yrc_tokenizer_t*      tokenizer;
+  yrc_token_t*          token;
+  yrc_parser_symbol_t*  symbol;
+  yrc_readcb            readcb;
+  int                   saw_newline;
 };
 
 
+int asi(yrc_parser_state_t*);
 int advance(yrc_parser_state_t*);
 int expression(yrc_parser_state_t*, int, yrc_ast_node_t**);
 int statement(yrc_parser_state_t*, yrc_ast_node_t**);
 int statements(yrc_parser_state_t*, yrc_llist_t*);
+int consume(yrc_parser_state_t*, yrc_token_operator_t);
+
 
 int _block(yrc_parser_state_t* state, yrc_ast_node_t** out) {
   yrc_ast_node_block_t* node = malloc(sizeof(*node));
@@ -35,8 +39,12 @@ int _block(yrc_parser_state_t* state, yrc_ast_node_t** out) {
     return 1;
   }
   *out = (yrc_ast_node_t*)node;
-  /* TODO: assert consume `}` */
-  return advance(state);
+
+  /* consume `}` */
+  if (advance(state)) {
+    return 1;
+  }
+  return consume(state, YRC_OP_RBRACE);
 }
 
 
@@ -73,6 +81,9 @@ int _call(yrc_parser_state_t* state, yrc_ast_node_t* left, yrc_ast_node_t** out)
 
   /* consume `)` */
   if (advance(state)) {
+    goto cleanupfull;
+  }
+  if (consume(state, YRC_OP_RPAREN)) {
     goto cleanupfull;
   }
   *out = (yrc_ast_node_t*)node;
@@ -143,8 +154,8 @@ int NAME(yrc_parser_state_t* state, yrc_ast_node_t** out) { \
   yrc_parser_symbol_t* sym = state->symbol;\
   yrc_token_t* token = state->token;\
   TYPE* node = malloc(sizeof(*node));\
-  printf("prefix " #NAME " " #TYPE " " #KIND "\n");\
   yrc_ast_node_unary_t* asunary = (yrc_ast_node_unary_t*)node;\
+  printf("prefix " #NAME " " #TYPE " " #KIND "\n");\
   sym;token;\
   if (node == NULL) {\
     return 1;\
@@ -334,9 +345,14 @@ int _ident(yrc_parser_state_t* state, yrc_ast_node_t** out) {
   XX(exprdiveq,      OPERATOR, as_operator == YRC_OP_DIVEQ,      10, NULL, _assign, NULL)\
   XX(exprlshfeq,     OPERATOR, as_operator == YRC_OP_LSHFEQ,     10, NULL, _assign, NULL)\
   XX(exprrshfeq,     OPERATOR, as_operator == YRC_OP_RSHFEQ,     10, NULL, _assign, NULL)\
-  XX(exprurshfeq,    OPERATOR, as_operator == YRC_OP_URSHFEQ,    10, NULL, _assign, NULL)
+  XX(exprurshfeq,    OPERATOR, as_operator == YRC_OP_URSHFEQ,    10, NULL, _assign, NULL)\
+  XX(null_rparen,    OPERATOR, as_operator == YRC_OP_RPAREN,      0, NULL, NULL, NULL)\
+  XX(null_rbrack,    OPERATOR, as_operator == YRC_OP_RBRACK,      0, NULL, NULL, NULL)\
+  XX(null_rbrace,    OPERATOR, as_operator == YRC_OP_RBRACE,      0, NULL, NULL, NULL)\
+  XX(null_colon,     OPERATOR, as_operator == YRC_OP_COLON,       0, NULL, NULL, NULL)\
+  XX(null_semicolon, OPERATOR, as_operator == YRC_OP_SEMICOLON,   0, NULL, NULL, NULL)
 
-static yrc_token_t eof = {YRC_TOKEN_EOF};
+static yrc_token_t eof = {YRC_TOKEN_EOF, {0, 0, 0}, {0, 0, 0}, {{0, 0, NULL}}};
 static yrc_parser_symbol_t sym_ident = {_ident, NULL, NULL, 0};
 static yrc_parser_symbol_t sym_literal = {_literal, NULL, NULL, 0};
 static yrc_parser_symbol_t sym_eof = {NULL, NULL, NULL, 0};
@@ -346,8 +362,15 @@ SYMBOLS(XX)
 #undef XX
 
 int advance(yrc_parser_state_t* parser) {
+  yrc_token_t* token = NULL;
+  if (parser->token == &eof) {
+    return 0;
+  }
 
-  yrc_token_t* token = yrc_llist_shift(parser->tokens);
+  if (yrc_tokenizer_scan(parser->tokenizer, parser->readcb, &token)) {
+    return 1;
+  }
+
   if (token == NULL) {
     parser->token = &eof;
     parser->symbol = &sym_eof;
@@ -368,11 +391,11 @@ int advance(yrc_parser_state_t* parser) {
     parser->symbol = &sym_ident;
     return 0;
   } 
-  
+
   if (token->type == YRC_TOKEN_COMMENT) {
     return advance(parser);
   }
-  
+
   if (token->type == YRC_TOKEN_WHITESPACE) {
     parser->saw_newline = token->info.as_whitespace.has_newline;
     return advance(parser);
@@ -394,6 +417,9 @@ int expression(yrc_parser_state_t* parser, int rbp, yrc_ast_node_t** out) {
   yrc_ast_node_t* left = NULL;
   yrc_parser_symbol_t* sym = parser->symbol;
   if (advance(parser)) {
+    return 1;
+  }
+  if (sym->nud == NULL) {
     return 1;
   }
   if (sym->nud(parser, &left)) {
@@ -435,7 +461,15 @@ int statement(yrc_parser_state_t* parser, yrc_ast_node_t** out) {
     return 1;
   }
   /* TODO: assert consume ; or \n */
-  return advance(parser);
+  if (advance(parser)) {
+    free(node);
+    return 1;
+  }
+  if (asi(parser)) {
+    free(node);
+    return 1;
+  }
+  return 0;
 }
 
 int statements(yrc_parser_state_t* parser, yrc_llist_t* out) {
@@ -455,56 +489,54 @@ int statements(yrc_parser_state_t* parser, yrc_llist_t* out) {
   return 0;
 }
 
-int map_ident(void* item, void** out, size_t idx, void* ctx) {
-  *out = item;
-  return 0;
+int asi(yrc_parser_state_t* parser) {
+  return !(
+    IS_OP(parser->token, SEMICOLON) ||
+    IS_EOF(parser->token) ||
+    parser->saw_newline
+  );
+}
+
+int consume(yrc_parser_state_t* parser, yrc_token_type type) {
+  return !(
+    parser->token->type == YRC_TOKEN_OPERATOR &&
+    parser->token->info.as_operator == type
+  );
 }
 
 /* 16K chunks by default */
-#define CHUNK_SIZE 16384
+#define CHUNK_SIZE 256
 
 YRC_EXTERN int yrc_parse(yrc_readcb read) {
-  yrc_tokenizer_t* tokenizer;
-  yrc_token_t* token;
-
-  if (yrc_tokenizer_init(&tokenizer, CHUNK_SIZE)) {
+  yrc_llist_t* stmts;
+  yrc_parser_state_t parser = {
+    NULL,
+    NULL,
+    NULL,
+    NULL,
+    0
+  };
+  parser.readcb = read;
+  if (yrc_tokenizer_init(&parser.tokenizer, CHUNK_SIZE)) {
     return 1;
   }
 
-  while (1) {
-    token = NULL;
-    if (yrc_tokenizer_scan(tokenizer, read, &token)) {
-      return 1;
-    }
-    if (token == NULL) {
-      break;
-    }
-    yrc_token_repr(token);
-  }
 
-  yrc_tokenizer_free(tokenizer);
-  return 0;
-}
-
-int _yrc_parse(yrc_tokenizer_t* tokenizer) {
-  yrc_ast_node_program_t* program = malloc(sizeof(*program));
-  yrc_parser_state_t parser;
-  if (program == NULL) {
-    return 1;
-  }
-  program->kind = YRC_AST_PROGRAM;
-  yrc_llist_init(&program->body);
-  parser.token = NULL;
-  parser.symbol = NULL;
-  parser.saw_newline = 0;
-  yrc_llist_init(&parser.tokens);
-  //yrc_llist_map(tokenizer->tokens, parser.tokens, map_ident, NULL);
   if (advance(&parser)) {
+    yrc_tokenizer_free(parser.tokenizer);
     return 1;
   }
-  if (statements(&parser, program->body)) {
+
+  if (yrc_llist_init(&stmts)) {
+    yrc_llist_free(stmts);
     return 1;
   }
-  yrc_llist_free(parser.tokens);
+
+  if (statements(&parser, stmts)) {
+    yrc_llist_free(stmts);
+    yrc_tokenizer_free(parser.tokenizer);
+    return 1;
+  }
+
   return 0;
 }

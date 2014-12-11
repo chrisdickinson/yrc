@@ -141,6 +141,7 @@ int yrc_tokenizer_init(yrc_tokenizer_t** state, size_t chunksz) {
     return 1;
   }
 
+  obj->eof = 0;
   obj->chunksz = chunksz;
   obj->data = malloc(chunksz);
   if (obj->data == NULL) {
@@ -349,7 +350,7 @@ int is_alnum(char ch) {
   XX(DEFAULT, default, {\
     if (eof) {\
       state = YRC_TKS_DONE;\
-      return 0;\
+      break;\
     }\
     switch (data[offset]) {\
       case '"':\
