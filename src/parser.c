@@ -4,6 +4,7 @@
 #include <stdlib.h> /* malloc + free */
 #include <stdio.h>
 
+#define MAX(a, b) ((a) > (b) ? (a) : (b))
 #define IS_EOF(K) (K == &eof)
 #define IS_OP(K, T) (K->type == YRC_TOKEN_OPERATOR && K->info.as_operator == YRC_OP_##T)
 struct yrc_parser_state_s {
@@ -378,7 +379,7 @@ int advance(yrc_parser_state_t* parser) {
   /* figure out what symbol represents this token */
   parser->token = token;
   parser->saw_newline = token->type == YRC_TOKEN_COMMENT ?
-    parser->saw_newline : 0;
+    parser->saw_newline : MAX(parser->saw_newline - 1, 0);
 
   if (token->type == YRC_TOKEN_NUMBER || token->type == YRC_TOKEN_STRING) {
     parser->symbol = &sym_literal;
@@ -395,7 +396,7 @@ int advance(yrc_parser_state_t* parser) {
   }
 
   if (token->type == YRC_TOKEN_WHITESPACE) {
-    parser->saw_newline = token->info.as_whitespace.has_newline;
+    parser->saw_newline = token->info.as_whitespace.has_newline << 1;
     return advance(parser);
   }
 #define STATE(NAME, TYPE, SUBTYPECHECK, LBP, NUD, LED, STD) \
@@ -466,11 +467,11 @@ int statement(yrc_parser_state_t* parser, yrc_ast_node_t** out) {
     return 1;
   }
   /* TODO: assert consume ; or \n */
-  if (advance(parser)) {
+  if (asi(parser)) {
     free(node);
     return 1;
   }
-  if (asi(parser)) {
+  if (advance(parser)) {
     free(node);
     return 1;
   }
