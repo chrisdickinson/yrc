@@ -35,11 +35,13 @@ const char* TOKEN_TYPES_MAP[] = {
 };
 
 const char* TOKEN_OPERATOR_MAP[] = {
+  "NULL_OP",
 #define XX(a, b) a,
   YRC_OPERATOR_MAP(XX)
+  "", /* KWOP_FENCE */
   YRC_KEYWORD_MAP(XX)
 #undef XX
-  "NULL_OP"
+  "" /* FINAL*/
 };
 
 yrc_op_t
@@ -116,11 +118,30 @@ yrc_op_t* OPERATORS[] = {
   &GT_GTGT_EQ_NUL,
 };
 
-static yrc_token_operator_t _string_to_operator(char* data, size_t size, size_t start) {
+yrc_token_operator_t _string_to_operator(char* data, size_t size) {
   size_t i;
   size_t j;
 
-  for(i = start; i < sizeof(TOKEN_OPERATOR_MAP) / sizeof(TOKEN_OPERATOR_MAP[0]); ++i) {
+  for(i = 1; i < sizeof(TOKEN_OPERATOR_MAP) / sizeof(TOKEN_OPERATOR_MAP[0]); ++i) {
+    for(j = 0; j < size && TOKEN_OPERATOR_MAP[i][j] != 0; ++j) {
+      if (TOKEN_OPERATOR_MAP[i][j] != data[j]) {
+        break;
+      }
+    }
+
+    if (j == size && TOKEN_OPERATOR_MAP[i][j] == 0) {
+      return i;
+    }
+  }
+  return 0;
+}
+
+
+yrc_token_keyword_t _string_to_keyword(char* data, size_t size) {
+  size_t i;
+  size_t j;
+
+  for(i = YRC_KWOP_FENCE + 1; i < sizeof(TOKEN_OPERATOR_MAP) / sizeof(TOKEN_OPERATOR_MAP[0]); ++i) {
     for(j = 0; j < size && TOKEN_OPERATOR_MAP[i][j] != 0; ++j) {
       if (TOKEN_OPERATOR_MAP[i][j] != data[j]) {
         break;
@@ -267,10 +288,6 @@ void _advance_op(yrc_op_t** op_current, yrc_op_t** op_last, char ch) {
 
 #define TO_CASE(a) case a:
 
-int _is_kw(yrc_tokenizer_t* state) {
-  return 0;
-}
-
 int is_ws(char ch) {
   switch(ch) {
     WHITESPACE_MAP(TO_CASE)
@@ -376,7 +393,7 @@ int is_alnum(char ch) {
           return 1;\
         }\
         tk->type = YRC_TOKEN_OPERATOR;\
-        tk->info.as_operator = _string_to_operator(data + offset, 1, 0);\
+        tk->info.as_operator = _string_to_operator(data + offset, 1);\
         ++offset;\
         ++fpos;\
         ++col;\
@@ -587,9 +604,16 @@ int is_alnum(char ch) {
       break;\
     }\
   }, primary, YRC_TOKEN_IDENT, {\
-    tk->info.as_ident.data = tokendata;\
-    tk->info.as_ident.size = tokensize;\
-  })) \
+    kw = _string_to_keyword(tokendata, tokensize);\
+    if (kw != 0) {\
+      tk->type = YRC_TOKEN_KEYWORD;\
+      tk->info.as_keyword = kw;\
+      free(tokendata);\
+    } else {\
+      tk->info.as_ident.data = tokendata;\
+      tk->info.as_ident.size = tokensize;\
+    }\
+  }))\
   XX(OPERATOR, operator, STATE_BORROW({\
     if (!is_op(data[offset])) {\
       state = YRC_TKS_DEFAULT;\
@@ -624,7 +648,7 @@ int is_alnum(char ch) {
       break;\
     }\
   }, secondary, YRC_TOKEN_OPERATOR, {\
-    tk->info.as_operator = _string_to_operator(tokendata, tokensize, 0);\
+    tk->info.as_operator = _string_to_operator(tokendata, tokensize);\
   }))\
   XX(COMMENT_LINE, comment_line, STATE_EXPORT({\
     if (eof || data[offset] == '\n') {\
@@ -685,6 +709,7 @@ int yrc_tokenizer_scan(yrc_tokenizer_t* tokenizer, yrc_readcb read, yrc_token_t*
   yrc_accum_t *primary, *secondary;
   yrc_op_t *op_current, *op_last;
   char *tokendata, *data, last;
+  yrc_token_keyword_t kw;
   char should_break = 0;
   yrc_token_t* tk;
   int eof;
@@ -751,6 +776,7 @@ void yrc_token_repr(yrc_token_t* tk) {
       fwrite(tk->info.as_ident.data, tk->info.as_ident.size, 1, stdout);
     break;
     case YRC_TOKEN_OPERATOR:
+    case YRC_TOKEN_KEYWORD:
       printf("%s", TOKEN_OPERATOR_MAP[tk->info.as_operator]);
     break;
     case YRC_TOKEN_NUMBER:

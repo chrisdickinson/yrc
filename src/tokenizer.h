@@ -100,13 +100,15 @@ enum {
 };
 
 enum {
+  YRC_OP_NULL=0,
 #define XX(a, b) YRC_OP_##b,
   YRC_OPERATOR_MAP(XX)
 #undef XX
+  YRC_KWOP_FENCE,
 #define XX(a, b) YRC_KW_##b,
   YRC_KEYWORD_MAP(XX)
 #undef XX
-  YRC_OP_NULL=0
+  YRC_OP_FINAL
 };
 
 enum {
