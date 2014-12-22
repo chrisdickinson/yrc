@@ -6,7 +6,7 @@
 
 typedef enum {
   YRC_PARSE_OK,
-  E_YRC_PARSE_UNEXPECTED_TOKEN,
+  E_YRC_PARSE_UNEXPECTED_TOKEN
 } yrc_parse_error_type;
 
 typedef struct yrc_parse_error_s {
@@ -22,6 +22,7 @@ typedef struct yrc_parse_error_s {
 #define MAX(a, b) ((a) > (b) ? (a) : (b))
 #define IS_EOF(K) (K == &eof)
 #define IS_OP(K, T) (K->type == YRC_TOKEN_OPERATOR && K->info.as_operator == YRC_OP_##T)
+#define IS_KW(K, T) (K->type == YRC_TOKEN_KEYWORD && K->info.as_operator == YRC_KW_##T)
 struct yrc_parser_state_s {
   yrc_tokenizer_t*      tokenizer;
   yrc_token_t*          token;
@@ -33,16 +34,14 @@ struct yrc_parser_state_s {
 };
 
 
-static int unexpected(yrc_parser_state_t* parser, yrc_token_t*);
-
 static int advance(yrc_parser_state_t*, enum yrc_scan_allow_regexp);
 static int expression(yrc_parser_state_t*, int, yrc_ast_node_t**);
 static int statement(yrc_parser_state_t*, yrc_ast_node_t**);
 static int statements(yrc_parser_state_t*, yrc_llist_t*);
 static int consume(yrc_parser_state_t*, yrc_token_operator_t);
-
 static yrc_token_t eof = {YRC_TOKEN_EOF, {0, 0, 0}, {0, 0, 0}, {{0, 0, NULL}}};
 static yrc_parser_symbol_t sym_eof = {NULL, NULL, NULL, 0};
+
 
 static int _block(yrc_parser_state_t* state, yrc_ast_node_t** out) {
   yrc_ast_node_block_t* node = malloc(sizeof(*node));
@@ -84,7 +83,7 @@ static int _break(yrc_parser_state_t* state, yrc_ast_node_t** out) {
 static int _do_regexp(yrc_parser_state_t* state, yrc_ast_node_t** out, enum yrc_scan_allow_regexp kind) {
   yrc_ast_node_literal_t* node = malloc(sizeof(*node));
   if (node == NULL) {
-    return NULL;
+    return 1;
   }
   *out = (yrc_ast_node_t*)node;
   node->value = state->token;
@@ -95,12 +94,12 @@ static int _do_regexp(yrc_parser_state_t* state, yrc_ast_node_t** out, enum yrc_
 }
 
 
-static int _regexp(yrc_parser_state_t* state, yrc_ast_node_t** out) {
+static int _regexp(yrc_parser_state_t* state, yrc_token_t* orig, yrc_ast_node_t** out) {
   return _do_regexp(state, out, YRC_IS_REGEXP);
 }
 
 
-static int _regexp_eq(yrc_parser_state_t* state, yrc_ast_node_t** out) {
+static int _regexp_eq(yrc_parser_state_t* state, yrc_token_t* orig, yrc_ast_node_t** out) {
   return _do_regexp(state, out, YRC_IS_REGEXP_EQ);
 }
 
@@ -165,6 +164,45 @@ static int _for(yrc_parser_state_t* state, yrc_ast_node_t** out) {
 
 
 static int _if(yrc_parser_state_t* state, yrc_ast_node_t** out) {
+  yrc_ast_node_if_t* node = malloc(sizeof(*node));
+  *out = (yrc_ast_node_t*)node;
+  if (node == NULL) return 1;
+  node->alternate = NULL;
+  if (!IS_OP(state->token, LPAREN) || advance(state, YRC_ISNT_REGEXP)) {
+    free(node);
+    return 1;
+  }
+  if (expression(state, 0, &node->test)) {
+    free(node);
+    return 1;
+  }
+  if (!IS_OP(state->token, RPAREN) || advance(state, YRC_ISNT_REGEXP)) {
+    // XXX: this leaks memory! (the expression nodes!)
+    free(node);
+    return 1;
+  }
+  if (statement(state, &node->consequent)) {
+    // XXX: this leaks memory! (the expression nodes!)
+    free(node);
+    return 1;
+  }
+
+  if (!IS_KW(state->token, ELSE)) {
+    return 0;
+  }
+
+  if (advance(state, YRC_ISNT_REGEXP)) {
+    // XXX: this leaks memory! (the expression nodes and the consequent!)
+    free(node);
+    return 1;
+  }
+
+  if (statement(state, &node->alternate)) {
+    // XXX: this leaks memory! (the expression nodes and the consequent!)
+    free(node);
+    return 1;
+  }
+
   return 0;
 }
 
@@ -265,11 +303,13 @@ cleanup:
 
 
 static int _prefix_object(yrc_parser_state_t* state, yrc_token_t* orig, yrc_ast_node_t** out) {
+  /* this could be either a block or destructuring */
   return 0;
 }
 
 
 static int _prefix_paren(yrc_parser_state_t* state, yrc_token_t* orig, yrc_ast_node_t** out) {
+  /* this could be either `(a, b, c)` OR `(a, b) => { }` */
   return 0;
 }
 
@@ -371,6 +411,7 @@ static int _ident(yrc_parser_state_t* state, yrc_token_t* orig, yrc_ast_node_t**
   XX(exprdelete,     KEYWORD, as_keyword == YRC_KW_DELETE,      0, _prefix,   NULL, NULL)\
   XX(exprnew,        KEYWORD, as_keyword == YRC_KW_NEW,         0, _prefix,   NULL, NULL)\
   XX(exprinstanceof, KEYWORD, as_keyword == YRC_KW_INSTANCEOF, 50, NULL,      _infix, NULL)\
+  XX(null_else,      KEYWORD, as_keyword == YRC_KW_ELSE,        0, NULL, NULL, NULL)\
   XX(exprlparen,     OPERATOR, as_operator == YRC_OP_LPAREN,     80, _prefix_paren, _call, NULL)\
   XX(lbrace,         OPERATOR, as_operator == YRC_OP_LBRACE,      0, _prefix_object, NULL, _block)\
   XX(exprdot,        OPERATOR, as_operator == YRC_OP_DOT,        80, NULL, _dynget, NULL)\
@@ -543,7 +584,7 @@ static int statement(yrc_parser_state_t* parser, yrc_ast_node_t** out) {
     return 1;
   }
   if (!IS_OP(parser->token, SEMICOLON)) {
-    return !(parser->saw_newline || IS_OP(parser->token, RBRACE));
+    return !(parser->saw_newline || IS_OP(parser->token, RBRACE) || IS_EOF(parser->token));
   }
   /* consume semicolon! */
   if (advance(parser, YRC_ISNT_REGEXP)) {

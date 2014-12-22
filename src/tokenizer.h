@@ -26,6 +26,7 @@
   XX("do", DO)\
   XX("if", IF)\
   XX("for", FOR)\
+  XX("else", ELSE)\
   XX("break", BREAK)\
   XX("continue", CONTINUE)\
   XX("return", RETURN)\

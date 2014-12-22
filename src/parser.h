@@ -82,6 +82,8 @@ typedef struct yrc_ast_node_conditional_s {
   yrc_ast_node_t* alternate;
 } yrc_ast_node_conditional_t;
 
+typedef yrc_ast_node_conditional_t yrc_ast_node_if_t;
+
 typedef struct yrc_ast_node_binary_s {
   yrc_ast_node_type kind;
   yrc_ast_node_t* left;
