@@ -702,7 +702,11 @@ enum {
   x->size = size;\
   x->eof = eof;
 
-int yrc_tokenizer_scan(yrc_tokenizer_t* tokenizer, yrc_readcb read, yrc_token_t** out) {
+int yrc_tokenizer_scan(
+    yrc_tokenizer_t* tokenizer, 
+    yrc_readcb read, 
+    yrc_token_t** out, 
+    enum yrc_scan_allow_regexp regexp_ok) {
   uint64_t last_fpos, last_line, last_col, fpos, line, col;
   yrc_tokenizer_state state = YRC_TKS_DEFAULT;
   size_t offset, start, diff, size, tokensize;

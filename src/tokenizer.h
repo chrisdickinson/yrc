@@ -190,9 +190,14 @@ typedef struct yrc_token_s {
 
 typedef struct yrc_tokenizer_s yrc_tokenizer_t;
 
+enum yrc_scan_allow_regexp {
+  YRC_NO_REGEXP=0,
+  YRC_ALLOW_REGEXP
+};
+
 void yrc_token_repr(yrc_token_t*);
 int yrc_tokenizer_init(yrc_tokenizer_t**, size_t);
-int yrc_tokenizer_scan(yrc_tokenizer_t*, yrc_readcb, yrc_token_t**);
+int yrc_tokenizer_scan(yrc_tokenizer_t*, yrc_readcb, yrc_token_t**, enum yrc_scan_allow_regexp);
 int yrc_tokenizer_free(yrc_tokenizer_t*);
 int yrc_tokenizer_eof(yrc_tokenizer_t*);
 #endif
