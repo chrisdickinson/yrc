@@ -4,6 +4,21 @@
 #include <stdlib.h> /* malloc + free */
 #include <stdio.h>
 
+typedef enum {
+  YRC_PARSE_OK,
+  E_YRC_PARSE_UNEXPECTED_TOKEN,
+} yrc_parse_error_type;
+
+typedef struct yrc_parse_error_s {
+  yrc_parse_error_type type;
+  uint64_t line;
+  uint64_t fpos;
+  uint64_t col;
+
+  yrc_token_t got;
+  yrc_token_t expected;
+} yrc_parse_error_t;
+
 #define MAX(a, b) ((a) > (b) ? (a) : (b))
 #define IS_EOF(K) (K == &eof)
 #define IS_OP(K, T) (K->type == YRC_TOKEN_OPERATOR && K->info.as_operator == YRC_OP_##T)
@@ -12,9 +27,13 @@ struct yrc_parser_state_s {
   yrc_token_t*          token;
   yrc_parser_symbol_t*  symbol;
   yrc_readcb            readcb;
-  int                   saw_newline;
+  uint_fast8_t          saw_newline;
+  uint_fast8_t          asi;
+  yrc_parse_error_t     error;
 };
 
+
+static int unexpected(yrc_parser_state_t* parser, yrc_token_t*);
 
 static int advance(yrc_parser_state_t*, enum yrc_scan_allow_regexp);
 static int expression(yrc_parser_state_t*, int, yrc_ast_node_t**);
@@ -22,6 +41,8 @@ static int statement(yrc_parser_state_t*, yrc_ast_node_t**);
 static int statements(yrc_parser_state_t*, yrc_llist_t*);
 static int consume(yrc_parser_state_t*, yrc_token_operator_t);
 
+static yrc_token_t eof = {YRC_TOKEN_EOF, {0, 0, 0}, {0, 0, 0}, {{0, 0, NULL}}};
+static yrc_parser_symbol_t sym_eof = {NULL, NULL, NULL, 0};
 
 static int _block(yrc_parser_state_t* state, yrc_ast_node_t** out) {
   yrc_ast_node_block_t* node = malloc(sizeof(*node));
@@ -37,9 +58,9 @@ static int _block(yrc_parser_state_t* state, yrc_ast_node_t** out) {
     free(node);
     return 1;
   }
-  if (consume(state, YRC_OP_RBRACE) || advance(state, YRC_ALLOW_REGEXP)) {
+  if (consume(state, YRC_OP_RBRACE) || advance(state, YRC_ISNT_REGEXP)) {
     free(node);
-    return 1;
+    return E_YRC_PARSE_UNEXPECTED_TOKEN;
   }
   *out = (yrc_ast_node_t*)node;
   return 0;
@@ -57,6 +78,30 @@ static int _break(yrc_parser_state_t* state, yrc_ast_node_t** out) {
     NULL;
   *out = (yrc_ast_node_t*)node;
   return 0;
+}
+
+
+static int _do_regexp(yrc_parser_state_t* state, yrc_ast_node_t** out, enum yrc_scan_allow_regexp kind) {
+  yrc_ast_node_literal_t* node = malloc(sizeof(*node));
+  if (node == NULL) {
+    return NULL;
+  }
+  *out = (yrc_ast_node_t*)node;
+  node->value = state->token;
+  if (advance(state, YRC_ISNT_REGEXP)) {
+    return 1;
+  }
+  return 0;
+}
+
+
+static int _regexp(yrc_parser_state_t* state, yrc_ast_node_t** out) {
+  return _do_regexp(state, out, YRC_IS_REGEXP);
+}
+
+
+static int _regexp_eq(yrc_parser_state_t* state, yrc_ast_node_t** out) {
+  return _do_regexp(state, out, YRC_IS_REGEXP_EQ);
 }
 
 
@@ -78,7 +123,7 @@ static int _call(yrc_parser_state_t* state, yrc_ast_node_t* left, yrc_ast_node_t
   } while(IS_OP(state->token, COMMA));
 
   /* consume `)` */
-  if (advance(state, YRC_NO_REGEXP)) {
+  if (advance(state, YRC_ISNT_REGEXP)) {
     goto cleanupfull;
   }
   if (consume(state, YRC_OP_RPAREN)) {
@@ -178,7 +223,7 @@ INFIX(_assign, yrc_ast_node_binary_t, 0, YRC_AST_EXPR_ASSIGNMENT, {
 INFIX(_dynget, yrc_ast_node_member_t, 0, YRC_AST_EXPR_MEMBER, {
   /* consume `]` */
   node->computed = 1;
-  if (advance(state, YRC_NO_REGEXP)) {
+  if (advance(state, YRC_ISNT_REGEXP)) {
     free(asbin->left);
     free(node);
     return 1;
@@ -206,7 +251,7 @@ static int _prefix_array(yrc_parser_state_t* state, yrc_token_t* orig, yrc_ast_n
   } while(IS_OP(state->token, COMMA));
 
   /* consume `]` */
-  if (advance(state, YRC_NO_REGEXP)) {
+  if (advance(state, YRC_ISNT_REGEXP)) {
     goto cleanupfull;
   }
   *out = (yrc_ast_node_t*)node;
@@ -230,7 +275,35 @@ static int _prefix_paren(yrc_parser_state_t* state, yrc_token_t* orig, yrc_ast_n
 
 
 static int _return(yrc_parser_state_t* state, yrc_ast_node_t** out) {
-  return 0;
+  yrc_ast_node_return_t* node = malloc(sizeof(*node));
+  if (node == NULL) {
+    return 1;
+  }
+  node->kind = YRC_AST_STMT_RETURN;
+  node->argument = NULL;
+  *out = (yrc_ast_node_t*)node;
+  if (IS_OP(state->token, SEMICOLON)) {
+    return advance(state, YRC_ISNT_REGEXP);
+  }
+
+  if (state->saw_newline || IS_EOF(state->token) || IS_OP(state->token, RBRACE)) {
+    return 0;
+  }
+
+  if (expression(state, 0, &node->argument)) {
+    return 1;
+  }
+
+  if (IS_OP(state->token, SEMICOLON)) {
+    return advance(state, YRC_ISNT_REGEXP);
+  }
+
+  // TODO: ASI :| chomping `}` should insert semicolon
+  if (state->saw_newline || IS_EOF(state->token) || IS_OP(state->token, RBRACE)) {
+    return 0;
+  }
+
+  return 1;
 }
 
 
@@ -304,7 +377,7 @@ static int _ident(yrc_parser_state_t* state, yrc_token_t* orig, yrc_ast_node_t**
   XX(exprlbrack,     OPERATOR, as_operator == YRC_OP_LBRACK,     80, _prefix_array, _dynget, NULL)\
   XX(exprmod,        OPERATOR, as_operator == YRC_OP_MOD,        60, NULL, _infix, NULL)\
   XX(exprmul,        OPERATOR, as_operator == YRC_OP_MUL,        60, NULL, _infix, NULL)\
-  XX(exprdiv,        OPERATOR, as_operator == YRC_OP_DIV,        60, NULL, _infix, NULL)\
+  XX(exprdiv,        OPERATOR, as_operator == YRC_OP_DIV,        60, _regexp, _infix, NULL)\
   XX(exprnot,        OPERATOR, as_operator == YRC_OP_NOT,         0, _prefix, NULL, NULL)\
   XX(exprtilde,      OPERATOR, as_operator == YRC_OP_TILDE,       0, _prefix, NULL, NULL)\
   XX(exprincr,       OPERATOR, as_operator == YRC_OP_INCR,      150, _prefix, _suffix, NULL)\
@@ -337,7 +410,7 @@ static int _ident(yrc_parser_state_t* state, yrc_token_t* orig, yrc_ast_node_t**
   XX(exproreq,       OPERATOR, as_operator == YRC_OP_OREQ,       10, NULL, _assign, NULL)\
   XX(exprmodeq,      OPERATOR, as_operator == YRC_OP_MODEQ,      10, NULL, _assign, NULL)\
   XX(exprmuleq,      OPERATOR, as_operator == YRC_OP_MULEQ,      10, NULL, _assign, NULL)\
-  XX(exprdiveq,      OPERATOR, as_operator == YRC_OP_DIVEQ,      10, NULL, _assign, NULL)\
+  XX(exprdiveq,      OPERATOR, as_operator == YRC_OP_DIVEQ,      10, _regexp_eq, _assign, NULL)\
   XX(exprlshfeq,     OPERATOR, as_operator == YRC_OP_LSHFEQ,     10, NULL, _assign, NULL)\
   XX(exprrshfeq,     OPERATOR, as_operator == YRC_OP_RSHFEQ,     10, NULL, _assign, NULL)\
   XX(exprurshfeq,    OPERATOR, as_operator == YRC_OP_URSHFEQ,    10, NULL, _assign, NULL)\
@@ -347,10 +420,8 @@ static int _ident(yrc_parser_state_t* state, yrc_token_t* orig, yrc_ast_node_t**
   XX(null_colon,     OPERATOR, as_operator == YRC_OP_COLON,       0, NULL, NULL, NULL)\
   XX(null_semicolon, OPERATOR, as_operator == YRC_OP_SEMICOLON,   0, NULL, NULL, NULL)
 
-static yrc_token_t eof = {YRC_TOKEN_EOF, {0, 0, 0}, {0, 0, 0}, {{0, 0, NULL}}};
 static yrc_parser_symbol_t sym_ident = {_ident, NULL, NULL, 0};
 static yrc_parser_symbol_t sym_literal = {_literal, NULL, NULL, 0};
-static yrc_parser_symbol_t sym_eof = {NULL, NULL, NULL, 0};
 #define XX(NAME, TYPE, SUBTYPE, LBP, NUD, LED, STD) \
   static yrc_parser_symbol_t sym_##NAME = {NUD, LED, STD, LBP};
 SYMBOLS(XX)
@@ -377,7 +448,9 @@ static int advance(yrc_parser_state_t* parser, enum yrc_scan_allow_regexp allow_
   parser->saw_newline = token->type == YRC_TOKEN_COMMENT ?
     parser->saw_newline : MAX(parser->saw_newline - 1, 0);
 
-  if (token->type == YRC_TOKEN_NUMBER || token->type == YRC_TOKEN_STRING) {
+  if (token->type == YRC_TOKEN_NUMBER ||
+      token->type == YRC_TOKEN_STRING ||
+      token->type == YRC_TOKEN_REGEXP) {
     parser->symbol = &sym_literal;
     return 0;
   } 
@@ -397,7 +470,6 @@ static int advance(yrc_parser_state_t* parser, enum yrc_scan_allow_regexp allow_
   }
 #define STATE(NAME, TYPE, SUBTYPECHECK, LBP, NUD, LED, STD) \
   if (token->type == YRC_TOKEN_##TYPE && token->info.SUBTYPECHECK) {\
-    printf(#NAME "\n");\
     parser->symbol = &sym_##NAME;\
     return 0;\
   }
@@ -415,7 +487,15 @@ static int expression(yrc_parser_state_t* parser, int rbp, yrc_ast_node_t** out)
   yrc_ast_node_t* left = NULL;
   yrc_parser_symbol_t* sym = parser->symbol;
   yrc_token_t* tok = parser->token;
-  if (advance(parser, YRC_ALLOW_REGEXP)) {
+  enum yrc_scan_allow_regexp type = YRC_ISNT_REGEXP;
+
+  if (IS_OP(tok, DIV)) {
+    type = YRC_IS_REGEXP;
+  } else if (IS_OP(tok, DIVEQ)) {
+    type = YRC_IS_REGEXP_EQ;
+  }
+
+  if (advance(parser, type)) {
     return 1;
   }
   if (sym->nud == NULL) {
@@ -426,7 +506,7 @@ static int expression(yrc_parser_state_t* parser, int rbp, yrc_ast_node_t** out)
   }
   while (rbp < parser->symbol->lbp) {
     sym = parser->symbol;
-    if (advance(parser, YRC_NO_REGEXP)) {
+    if (advance(parser, YRC_ISNT_REGEXP)) {
       return 1;
     }
     if (sym->led == NULL) {
@@ -449,7 +529,7 @@ static int statement(yrc_parser_state_t* parser, yrc_ast_node_t** out) {
   yrc_parser_symbol_t* sym = parser->symbol;
   yrc_ast_node_exprstmt_t* node;
   if (sym->std) {
-    if (advance(parser, YRC_NO_REGEXP)) {
+    if (advance(parser, YRC_ISNT_REGEXP)) {
       return 1;
     }
     return sym->std(parser, out);
@@ -462,12 +542,11 @@ static int statement(yrc_parser_state_t* parser, yrc_ast_node_t** out) {
     free(node);
     return 1;
   }
-  yrc_token_repr(parser->token);
   if (!IS_OP(parser->token, SEMICOLON)) {
-    return 0;
+    return !(parser->saw_newline || IS_OP(parser->token, RBRACE));
   }
   /* consume semicolon! */
-  if (advance(parser, YRC_NO_REGEXP)) {
+  if (advance(parser, YRC_ISNT_REGEXP)) {
     free(node);
     return 1;
   }
@@ -491,7 +570,7 @@ static int statements(yrc_parser_state_t* parser, yrc_llist_t* out) {
   return 0;
 }
 
-static int consume(yrc_parser_state_t* parser, yrc_token_type type) {
+static int consume(yrc_parser_state_t* parser, yrc_token_operator_t type) {
   return !(
     parser->token->type == YRC_TOKEN_OPERATOR &&
     parser->token->info.as_operator == type
@@ -508,7 +587,16 @@ YRC_EXTERN int yrc_parse(yrc_readcb read) {
     NULL,
     NULL,
     NULL,
-    0
+    0,
+    0,
+    {
+      YRC_PARSE_OK,
+      0,
+      0,
+      0,
+      {YRC_TOKEN_EOF, {0, 0, 0}, {0, 0, 0}, {{0, 0, NULL}}},
+      {YRC_TOKEN_EOF, {0, 0, 0}, {0, 0, 0}, {{0, 0, NULL}}}
+    }
   };
   parser.readcb = read;
   if (yrc_tokenizer_init(&parser.tokenizer, CHUNK_SIZE)) {
@@ -516,7 +604,7 @@ YRC_EXTERN int yrc_parse(yrc_readcb read) {
   }
 
 
-  if (advance(&parser, YRC_ALLOW_REGEXP)) {
+  if (advance(&parser, YRC_ISNT_REGEXP)) {
     yrc_tokenizer_free(parser.tokenizer);
     return 1;
   }

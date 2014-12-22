@@ -28,14 +28,6 @@ extern "C" {
 # define YRC_EXTERN /* nothing */
 #endif
 
-typedef struct yrc_parse_error_s {
-  int error;
-  uint64_t fpos;
-  uint64_t line;
-  uint64_t col;
-} yrc_error_t;
-
-YRC_EXTERN int yrc_get_last_error(yrc_error_t*);
 typedef size_t (*yrc_readcb)(char*, size_t);
 YRC_EXTERN int yrc_parse(yrc_readcb);
 #ifdef __cplusplus

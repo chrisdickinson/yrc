@@ -20,7 +20,8 @@ struct yrc_tokenizer_s {
   size_t start;
   size_t size;
 
-  int eof;
+  uint_fast8_t eof;
+  uint_fast8_t flags;
   char* data;
   size_t chunksz;
   yrc_accum_t* primary;
@@ -671,7 +672,90 @@ int is_alnum(char ch) {
     tk->info.as_comment.delim = 1;\
     tk->info.as_comment.data = tokendata;\
     tk->info.as_comment.size = tokensize - 2;\
-  }))
+  }))\
+  XX(REGEXP_HEAD, regexp_default, {\
+    while(1) {\
+      if (offset == size && !eof) {\
+        pending_read = 1;\
+        break;\
+      }\
+      if (eof || data[offset] == '\n') {\
+        return 1;\
+      }\
+      if (data[offset] == '/' && last != '\\') {\
+        state = YRC_TKS_REGEXP_TAIL;\
+        break;\
+      }\
+      last = data[offset];\
+      ++offset;\
+    }\
+    diff = offset - start;\
+    fpos += diff;\
+    col += diff;\
+    if (yrc_accum_copy(primary, data + start, diff)) {\
+      return 1;\
+    }\
+    start = offset;\
+    if (pending_read) {\
+      pending_read = 0;\
+      break;\
+    }\
+    ++offset;\
+    flags = 0;\
+    /* note that we're *explicitly* leaving "primary" as-is. \
+       REGEXP_TAIL will take care of it. */\
+  })\
+  XX(REGEXP_TAIL, regexp_tail, {\
+    while(1) {\
+      if (offset == size && !eof) {\
+        pending_read = 1;\
+        break;\
+      }\
+      if (eof) {\
+        state = YRC_TKS_DEFAULT;\
+        break;\
+      }\
+      should_break = 0;\
+      switch(data[offset]) {\
+        case 'm':\
+          should_break = !((flags ^= YRC_REGEXP_MULTILINE) & YRC_REGEXP_MULTILINE);\
+        break;\
+        case 'y':\
+          should_break = !((flags ^= YRC_REGEXP_STICKY) & YRC_REGEXP_STICKY);\
+        break;\
+        case 'g':\
+          should_break = !((flags ^= YRC_REGEXP_GLOBAL) & YRC_REGEXP_GLOBAL);\
+        break;\
+        case 'i':\
+          should_break = !((flags ^= YRC_REGEXP_IGNORECASE) & YRC_REGEXP_IGNORECASE);\
+        break;\
+        default: should_break = 1; break;\
+      }\
+      if (should_break) { should_break = 0; break; }\
+      last = data[offset];\
+      ++offset;\
+    }\
+    diff = offset - start;\
+    fpos += diff;\
+    col += diff;\
+    start = offset;\
+    if (pending_read) {\
+      pending_read = 0;\
+      break;\
+    }\
+    if (yrc_accum_export(primary, &tokendata, &tokensize)) {\
+      return 1;\
+    }\
+    tk = malloc(sizeof(*tk));\
+    if (tk == NULL) {\
+      return 1;\
+    }\
+    tk->type = YRC_TOKEN_REGEXP;\
+    tk->info.as_regexp.data = tokendata;\
+    tk->info.as_regexp.size = tokensize;\
+    tk->info.as_regexp.flags = flags;\
+    goto export;\
+  })
 
 enum {
 #define XX(a, b, c) YRC_TKS_##a,
@@ -691,7 +775,8 @@ enum {
   size = x->size;\
   primary = x->primary;\
   eof = x->eof;\
-  secondary = x->primary;
+  secondary = x->primary;\
+  flags = x->flags;
 
 #define STORE(x) \
   x->start = start;\
@@ -700,13 +785,14 @@ enum {
   x->col = col;\
   x->offset = offset;\
   x->size = size;\
+  x->flags = flags;\
   x->eof = eof;
 
 int yrc_tokenizer_scan(
     yrc_tokenizer_t* tokenizer, 
     yrc_readcb read, 
     yrc_token_t** out, 
-    enum yrc_scan_allow_regexp regexp_ok) {
+    enum yrc_scan_allow_regexp regexp_mode) {
   uint64_t last_fpos, last_line, last_col, fpos, line, col;
   yrc_tokenizer_state state = YRC_TKS_DEFAULT;
   size_t offset, start, diff, size, tokensize;
@@ -716,12 +802,23 @@ int yrc_tokenizer_scan(
   yrc_token_keyword_t kw;
   char should_break = 0;
   yrc_token_t* tk;
-  int eof;
-  char flags;
+  uint_fast8_t eof;
+  uint_fast8_t flags;
   char delim;
   int pending_read = 0;
 
   LOAD(tokenizer);
+
+  switch (regexp_mode) {
+    case YRC_IS_REGEXP_EQ:
+      if (yrc_accum_push(primary, '=')) {
+        return 1;
+      }
+    case YRC_IS_REGEXP:
+      state = YRC_TKS_REGEXP_HEAD;
+      break;
+    default: break;
+  }
   while (!eof) {
     if (offset == size) {
       size = read(tokenizer->data, tokenizer->chunksz);
@@ -788,6 +885,23 @@ void yrc_token_repr(yrc_token_t* tk) {
         printf("float: %lf", tk->info.as_number.data.as_double);
       } else {
         printf("int: %llu", tk->info.as_number.data.as_int);
+      }
+    break;
+    case YRC_TOKEN_REGEXP:
+      printf("/");
+      fwrite(tk->info.as_regexp.data, tk->info.as_regexp.size, 1, stdout);
+      printf("/");
+      if (tk->info.as_regexp.flags & YRC_REGEXP_MULTILINE) {
+        printf("m");
+      }
+      if (tk->info.as_regexp.flags & YRC_REGEXP_GLOBAL) {
+        printf("g");
+      }
+      if (tk->info.as_regexp.flags & YRC_REGEXP_STICKY) {
+        printf("y");
+      }
+      if (tk->info.as_regexp.flags & YRC_REGEXP_IGNORECASE) {
+        printf("i");
       }
     break;
   }

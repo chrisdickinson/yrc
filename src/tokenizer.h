@@ -10,6 +10,7 @@
 #define YRC_TOKEN_TYPES(XX) \
   XX(STRING, string) \
   XX(NUMBER, number) \
+  XX(REGEXP, regexp) \
   XX(IDENT, ident) \
   XX(KEYWORD, keyword) \
   XX(OPERATOR, operator) \
@@ -136,8 +137,20 @@ typedef uint32_t yrc_token_type;
 #define REPR_SEEN_EXP    (REPR_SEEN_EXP_LE | REPR_SEEN_EXP_BE)
 #define REPR_SEEN_ANY    0x000F
 #define REPR_IS_FLOAT    0x0010
-typedef uint32_t yrc_token_operator_t;
-typedef uint32_t yrc_token_keyword_t;
+typedef uint_fast8_t yrc_token_operator_t;
+typedef uint_fast8_t yrc_token_keyword_t;
+typedef enum {
+  YRC_REGEXP_GLOBAL=0x1,
+  YRC_REGEXP_IGNORECASE=0x2,
+  YRC_REGEXP_MULTILINE=0x4,
+  YRC_REGEXP_STICKY=0x8
+} yrc_regexp_flags;
+
+typedef struct yrc_token_regexp_s {
+  size_t size;
+  char* data;
+  yrc_regexp_flags flags;
+} yrc_token_regexp_t;
 
 typedef struct yrc_token_string_s {
   yrc_token_string_delim delim;  /* " ' ''' """ */
@@ -191,8 +204,9 @@ typedef struct yrc_token_s {
 typedef struct yrc_tokenizer_s yrc_tokenizer_t;
 
 enum yrc_scan_allow_regexp {
-  YRC_NO_REGEXP=0,
-  YRC_ALLOW_REGEXP
+  YRC_ISNT_REGEXP=0,
+  YRC_IS_REGEXP,
+  YRC_IS_REGEXP_EQ
 };
 
 void yrc_token_repr(yrc_token_t*);

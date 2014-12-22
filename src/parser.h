@@ -70,6 +70,11 @@ struct yrc_ast_node_s {
   char rest[1];
 };
 
+typedef struct yrc_ast_node_return_s {
+  yrc_ast_node_type kind;
+  yrc_ast_node_t* argument;
+} yrc_ast_node_return_t;
+
 typedef struct yrc_ast_node_conditional_s {
   yrc_ast_node_type kind;
   yrc_ast_node_t* test;
