@@ -1,6 +1,7 @@
 #include "yrc-common.h"
 #include "llist.h"
 #include "parser.h"
+#include "pool.h"
 #include <stdlib.h> /* malloc + free */
 #include <stdio.h>
 
@@ -28,6 +29,7 @@ struct yrc_parser_state_s {
   yrc_token_t*          token;
   yrc_parser_symbol_t*  symbol;
   yrc_readcb            readcb;
+  yrc_pool_t*           node_pool;
   uint_fast8_t          saw_newline;
   uint_fast8_t          asi;
   yrc_parse_error_t     error;
@@ -44,21 +46,20 @@ static yrc_parser_symbol_t sym_eof = {NULL, NULL, NULL, 0};
 
 
 static int _block(yrc_parser_state_t* state, yrc_ast_node_t** out) {
-  yrc_ast_node_block_t* node = malloc(sizeof(*node));
+  yrc_ast_node_t* node = yrc_pool_attain(state->node_pool);
+  node->kind = YRC_AST_STMT_BLOCK;
   if (node == NULL) {
     return 1;
   }
-  if (yrc_llist_init(&node->body)) {
-    free(node);
+  if (yrc_llist_init(&node->data.as_block.body)) {
     return 1;
   }
-  if (statements(state, node->body)) {
-    yrc_llist_free(node->body);
-    free(node);
+  if (statements(state, node->data.as_block.body)) {
+    yrc_llist_free(node->data.as_block.body);
     return 1;
   }
   if (consume(state, YRC_OP_RBRACE) || advance(state, YRC_ISNT_REGEXP)) {
-    free(node);
+    yrc_llist_free(node->data.as_block.body);
     return E_YRC_PARSE_UNEXPECTED_TOKEN;
   }
   *out = (yrc_ast_node_t*)node;
@@ -67,13 +68,13 @@ static int _block(yrc_parser_state_t* state, yrc_ast_node_t** out) {
 
 
 static int _break(yrc_parser_state_t* state, yrc_ast_node_t** out) {
-  yrc_ast_node_break_t* node = malloc(sizeof(*node));
+  yrc_ast_node_t* node = yrc_pool_attain(state->node_pool);
   if (node == NULL) {
     return 1;
   }
   node->kind = YRC_AST_STMT_BREAK;
-  node->label = (state->token->type == YRC_TOKEN_IDENT) ?
-    node->label = state->token :
+  node->data.as_break.label = (state->token->type == YRC_TOKEN_IDENT) ?
+    node->data.as_break.label = state->token :
     NULL;
   *out = (yrc_ast_node_t*)node;
   return 0;
@@ -81,12 +82,13 @@ static int _break(yrc_parser_state_t* state, yrc_ast_node_t** out) {
 
 
 static int _do_regexp(yrc_parser_state_t* state, yrc_ast_node_t** out, enum yrc_scan_allow_regexp kind) {
-  yrc_ast_node_literal_t* node = malloc(sizeof(*node));
+  yrc_ast_node_t* node = yrc_pool_attain(state->node_pool);
   if (node == NULL) {
     return 1;
   }
   *out = (yrc_ast_node_t*)node;
-  node->value = state->token;
+  node->kind = YRC_AST_EXPR_LITERAL;
+  node->data.as_literal.value = state->token;
   if (advance(state, YRC_ISNT_REGEXP)) {
     return 1;
   }
@@ -105,48 +107,47 @@ static int _regexp_eq(yrc_parser_state_t* state, yrc_token_t* orig, yrc_ast_node
 
 
 static int _call(yrc_parser_state_t* state, yrc_ast_node_t* left, yrc_ast_node_t** out) {
-  yrc_ast_node_call_t* node = malloc(sizeof(*node));
+  yrc_ast_node_t* node = yrc_pool_attain(state->node_pool);
   yrc_ast_node_t* item;
-  node->callee = left;
-  if (yrc_llist_init(&node->arguments)) {
-    goto cleanup;
+  node->kind = YRC_AST_EXPR_CALL;
+  node->data.as_call.callee = left;
+  if (yrc_llist_init(&node->data.as_call.arguments)) {
+    return 1;
   }
   do {
     item = NULL;
     if (expression(state, 0, &item)) {
-      goto cleanupfull;
+      goto cleanup;
     }
-    if (yrc_llist_push(node->arguments, item)) {
-      goto cleanupfull;
+    if (yrc_llist_push(node->data.as_call.arguments, item)) {
+      goto cleanup;
     }
   } while(IS_OP(state->token, COMMA));
 
   /* consume `)` */
   if (advance(state, YRC_ISNT_REGEXP)) {
-    goto cleanupfull;
+    goto cleanup;
   }
   if (consume(state, YRC_OP_RPAREN)) {
-    goto cleanupfull;
+    goto cleanup;
   }
   *out = (yrc_ast_node_t*)node;
   return 0;
 
-cleanupfull:
-  yrc_llist_free(node->arguments);
 cleanup:
-  free(node);
+  yrc_llist_free(node->data.as_call.arguments);
   return 1;
 }
 
 
 static int _continue(yrc_parser_state_t* state, yrc_ast_node_t** out) {
-  yrc_ast_node_continue_t* node = malloc(sizeof(*node));
+  yrc_ast_node_t* node = yrc_pool_attain(state->node_pool);
   if (node == NULL) {
     return 1;
   }
   node->kind = YRC_AST_STMT_CONTINUE;
-  node->label = (state->token->type == YRC_TOKEN_IDENT) ?
-    node->label = state->token :
+  node->data.as_continue.label = (state->token->type == YRC_TOKEN_IDENT) ?
+    node->data.as_continue.label = state->token :
     NULL;
   *out = (yrc_ast_node_t*)node;
   return 0;
@@ -164,45 +165,32 @@ static int _for(yrc_parser_state_t* state, yrc_ast_node_t** out) {
 
 
 static int _if(yrc_parser_state_t* state, yrc_ast_node_t** out) {
-  yrc_ast_node_if_t* node = malloc(sizeof(*node));
-  *out = (yrc_ast_node_t*)node;
+  yrc_ast_node_t* node = yrc_pool_attain(state->node_pool);
+  *out = node;
+  node->kind = YRC_AST_STMT_IF;
   if (node == NULL) return 1;
-  node->alternate = NULL;
+  node->data.as_if.alternate = NULL;
   if (!IS_OP(state->token, LPAREN) || advance(state, YRC_ISNT_REGEXP)) {
-    free(node);
     return 1;
   }
-  if (expression(state, 0, &node->test)) {
-    free(node);
+  if (expression(state, 0, &node->data.as_if.test)) {
     return 1;
   }
   if (!IS_OP(state->token, RPAREN) || advance(state, YRC_ISNT_REGEXP)) {
-    // XXX: this leaks memory! (the expression nodes!)
-    free(node);
     return 1;
   }
-  if (statement(state, &node->consequent)) {
-    // XXX: this leaks memory! (the expression nodes!)
-    free(node);
+  if (statement(state, &node->data.as_if.consequent)) {
     return 1;
   }
-
   if (!IS_KW(state->token, ELSE)) {
     return 0;
   }
-
   if (advance(state, YRC_ISNT_REGEXP)) {
-    // XXX: this leaks memory! (the expression nodes and the consequent!)
-    free(node);
     return 1;
   }
-
-  if (statement(state, &node->alternate)) {
-    // XXX: this leaks memory! (the expression nodes and the consequent!)
-    free(node);
+  if (statement(state, &node->data.as_if.alternate)) {
     return 1;
   }
-
   return 0;
 }
 
@@ -211,19 +199,17 @@ static int _if(yrc_parser_state_t* state, yrc_ast_node_t** out) {
 int NAME(yrc_parser_state_t* state, yrc_ast_node_t* left, yrc_ast_node_t** out) { \
   yrc_parser_symbol_t* sym = state->symbol;\
   yrc_token_t* token = state->token;\
-  TYPE* node = malloc(sizeof(*node));\
-  yrc_ast_node_binary_t* asbin = (yrc_ast_node_binary_t*)node;\
+  yrc_ast_node_t* node = yrc_pool_attain(state->node_pool);\
+  node->kind = KIND;\
   sym;token;\
   if (node == NULL) {\
     return 1;\
   }\
-  asbin->left = left;\
-  if (expression(state, state->symbol->lbp + RBP_MOD, &asbin->right)) {\
-    free(asbin->left);\
-    free(node);\
+  node->data.as_binary.left = left;\
+  if (expression(state, state->symbol->lbp + RBP_MOD, &node->data.as_binary.right)) {\
     return 1;\
   }\
-  asbin->kind = KIND;\
+  node->kind = KIND;\
   do { EXTRA } while(0);\
   *out = (yrc_ast_node_t*)node;\
   return 0;\
@@ -233,71 +219,65 @@ int NAME(yrc_parser_state_t* state, yrc_ast_node_t* left, yrc_ast_node_t** out) 
 int NAME(yrc_parser_state_t* state, yrc_token_t* orig, yrc_ast_node_t** out) { \
   yrc_parser_symbol_t* sym = state->symbol;\
   yrc_token_t* token = state->token;\
-  TYPE* node = malloc(sizeof(*node));\
-  yrc_ast_node_unary_t* asunary = (yrc_ast_node_unary_t*)node;\
+  yrc_ast_node_t* node = yrc_pool_attain(state->node_pool);\
   sym;token;\
   if (node == NULL) {\
     return 1;\
   }\
-  if (expression(state, BP, &asunary->argument)) {\
-    free(node);\
+  if (expression(state, BP, &node->data.as_unary.argument)) {\
     return 1;\
   }\
-  asunary->kind = KIND;\
+  node->kind = KIND;\
   do { EXTRA } while(0);\
   *out = (yrc_ast_node_t*)node;\
   return 0;\
 }
 
 INFIX(_infix, yrc_ast_node_binary_t, 0, YRC_AST_EXPR_BINARY, {
-  node->op = token->info.as_operator;
+  node->data.as_binary.op = token->info.as_operator;
 })
 INFIX(_infixr, yrc_ast_node_binary_t, 0, YRC_AST_EXPR_LOGICAL, {
-  node->op = token->info.as_operator;
+  node->data.as_binary.op = token->info.as_operator;
 })
 INFIX(_assign, yrc_ast_node_binary_t, 0, YRC_AST_EXPR_ASSIGNMENT, {
-  node->op = token->info.as_operator;
+  node->data.as_assign.op = token->info.as_operator;
 })
 INFIX(_dynget, yrc_ast_node_member_t, 0, YRC_AST_EXPR_MEMBER, {
   /* consume `]` */
-  node->computed = 1;
+  node->data.as_member.computed = 1;
   if (advance(state, YRC_ISNT_REGEXP)) {
-    free(asbin->left);
-    free(node);
     return 1;
   }
 })
 PREFIX(_prefix, yrc_ast_node_unary_t, 0, YRC_AST_EXPR_UNARY, {
-  node->op = token->info.as_operator;
+  node->data.as_unary.op = token->info.as_operator;
 })
 
 
 static int _prefix_array(yrc_parser_state_t* state, yrc_token_t* orig, yrc_ast_node_t** out) {
-  yrc_ast_node_array_t* node = malloc(sizeof(*node));
+  yrc_ast_node_t* node = yrc_pool_attain(state->node_pool);
   yrc_ast_node_t* item;
-  if (yrc_llist_init(&node->elements)) {
-    goto cleanup;
+  if (yrc_llist_init(&node->data.as_array.elements)) {
+    return 1;
   }
   do {
     item = NULL;
     if (expression(state, 0, &item)) {
-      goto cleanupfull;
+      goto cleanup;
     }
-    if (yrc_llist_push(node->elements, item)) {
-      goto cleanupfull;
+    if (yrc_llist_push(node->data.as_array.elements, item)) {
+      goto cleanup;
     }
   } while(IS_OP(state->token, COMMA));
 
   /* consume `]` */
   if (advance(state, YRC_ISNT_REGEXP)) {
-    goto cleanupfull;
+    goto cleanup;
   }
-  *out = (yrc_ast_node_t*)node;
+  *out = node;
   return 0;
-cleanupfull:
-  yrc_llist_free(node->elements);
 cleanup:
-  free(node);
+  yrc_llist_free(node->data.as_array.elements);
   return 1;
 }
 
@@ -315,13 +295,13 @@ static int _prefix_paren(yrc_parser_state_t* state, yrc_token_t* orig, yrc_ast_n
 
 
 static int _return(yrc_parser_state_t* state, yrc_ast_node_t** out) {
-  yrc_ast_node_return_t* node = malloc(sizeof(*node));
+  yrc_ast_node_t* node = yrc_pool_attain(state->node_pool);
   if (node == NULL) {
     return 1;
   }
   node->kind = YRC_AST_STMT_RETURN;
-  node->argument = NULL;
-  *out = (yrc_ast_node_t*)node;
+  node->data.as_return.argument = NULL;
+  *out = node;
   if (IS_OP(state->token, SEMICOLON)) {
     return advance(state, YRC_ISNT_REGEXP);
   }
@@ -330,7 +310,7 @@ static int _return(yrc_parser_state_t* state, yrc_ast_node_t** out) {
     return 0;
   }
 
-  if (expression(state, 0, &node->argument)) {
+  if (expression(state, 0, &node->data.as_return.argument)) {
     return 1;
   }
 
@@ -373,22 +353,22 @@ static int _while(yrc_parser_state_t* state, yrc_ast_node_t** out) {
 
 
 static int _literal(yrc_parser_state_t* state, yrc_token_t* orig, yrc_ast_node_t** out) {
-  yrc_ast_node_literal_t* node = malloc(sizeof(*node));
+  yrc_ast_node_t* node = yrc_pool_attain(state->node_pool);
   if (node == NULL) {
     return 1;
   }
-  node->value = orig;
-  *out = (yrc_ast_node_t*)node;
+  node->data.as_literal.value = orig;
+  *out = node;
   return 0;
 }
 
 
 static int _ident(yrc_parser_state_t* state, yrc_token_t* orig, yrc_ast_node_t** out) {
-  yrc_ast_node_ident_t* node = malloc(sizeof(*node));
+  yrc_ast_node_t* node = yrc_pool_attain(state->node_pool);
   if (node == NULL) {
     return 1;
   }
-  node->name = orig;
+  node->data.as_ident.name = orig;
   *out = (yrc_ast_node_t*)node;
   return 0;
 }
@@ -568,19 +548,18 @@ static int expression(yrc_parser_state_t* parser, int rbp, yrc_ast_node_t** out)
 
 static int statement(yrc_parser_state_t* parser, yrc_ast_node_t** out) {
   yrc_parser_symbol_t* sym = parser->symbol;
-  yrc_ast_node_exprstmt_t* node;
+  yrc_ast_node_t* node;
   if (sym->std) {
     if (advance(parser, YRC_ISNT_REGEXP)) {
       return 1;
     }
     return sym->std(parser, out);
   }
-  node = malloc(sizeof(*node));
+  node = yrc_pool_attain(parser->node_pool);
   if (node == NULL) {
     return 1;
   }
-  if (expression(parser, 0, &node->expression)) {
-    free(node);
+  if (expression(parser, 0, &node->data.as_exprstmt.expression)) {
     return 1;
   }
   if (!IS_OP(parser->token, SEMICOLON)) {
@@ -588,7 +567,6 @@ static int statement(yrc_parser_state_t* parser, yrc_ast_node_t** out) {
   }
   /* consume semicolon! */
   if (advance(parser, YRC_ISNT_REGEXP)) {
-    free(node);
     return 1;
   }
   return 0;
@@ -628,6 +606,7 @@ YRC_EXTERN int yrc_parse(yrc_readcb read) {
     NULL,
     NULL,
     NULL,
+    NULL,
     0,
     0,
     {
@@ -644,20 +623,27 @@ YRC_EXTERN int yrc_parse(yrc_readcb read) {
     return 1;
   }
 
+  if (yrc_pool_init(&parser.node_pool, sizeof(yrc_ast_node_t))) {
+    yrc_tokenizer_free(parser.tokenizer);
+    return 1;
+  }
 
   if (advance(&parser, YRC_ISNT_REGEXP)) {
     yrc_tokenizer_free(parser.tokenizer);
+    yrc_pool_free(parser.node_pool);
     return 1;
   }
 
   if (yrc_llist_init(&stmts)) {
     yrc_llist_free(stmts);
+    yrc_pool_free(parser.node_pool);
     return 1;
   }
 
   if (statements(&parser, stmts)) {
     yrc_llist_free(stmts);
     yrc_tokenizer_free(parser.tokenizer);
+    yrc_pool_free(parser.node_pool);
     return 1;
   }
 

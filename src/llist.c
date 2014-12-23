@@ -1,7 +1,7 @@
 #include "yrc-common.h"
 #include "llist.h"
 #include <stdlib.h> /* malloc + free */
-
+#include "pool.h"
 
 typedef struct yrc_llist_node_s {
   void* item;
@@ -44,6 +44,20 @@ typedef struct _anyall_ctx_s {
   int mode;  /* 0 = any, 1 = all */
 } _anyall_ctx_t;
 
+/* shared pool for all llist nodes */
+static yrc_pool_t* llist_node_pool = NULL;
+
+static void* alloc_node() {
+  if (llist_node_pool == NULL) {
+    yrc_pool_init(&llist_node_pool, sizeof(yrc_llist_node_t));
+  }
+  return yrc_pool_attain(llist_node_pool);
+}
+
+static int free_node(yrc_llist_node_t* node) {
+  return yrc_pool_release(llist_node_pool, node);
+}
+
 
 int yrc_llist_init(yrc_llist_t** pllist) {
   yrc_llist_t* list;
@@ -64,7 +78,7 @@ int yrc_llist_free(yrc_llist_t* list) {
   current = list->head;
   while(current) {
     next = current->next;
-    free(current);
+    free_node(current);
     current = next;
   }
   free(list);
@@ -74,7 +88,7 @@ int yrc_llist_free(yrc_llist_t* list) {
 
 int yrc_llist_push(yrc_llist_t* list, void* item) {
   yrc_llist_node_t* node;
-  node = malloc(sizeof(*node));
+  node = alloc_node();
   if (node == NULL) {
     return 1;
   }
@@ -103,7 +117,7 @@ void* yrc_llist_pop(yrc_llist_t* list) {
   if (tail == iter) {
     item = iter->item;
     --list->size;
-    free(iter);
+    free_node(iter);
     list->head = list->tail = NULL;
     return item;
   }
@@ -112,7 +126,7 @@ void* yrc_llist_pop(yrc_llist_t* list) {
   }
   --list->size;
   item = iter->next->item;
-  free(iter->next);
+  free_node(iter->next);
   iter->next = NULL;
   list->tail = iter;
   return item;
@@ -133,13 +147,13 @@ void* yrc_llist_shift(yrc_llist_t* list) {
   if (list->head == list->tail) {
     item = list->head->item;
     --list->size;
-    free(list->head);
+    free_node(list->head);
     list->head = list->tail = NULL;
     return item;
   }
   next = list->head->next;
   item = list->head->item;
-  free(list->head);
+  free_node(list->head);
   list->head = next;
   --list->size;
   return item;
@@ -148,7 +162,7 @@ void* yrc_llist_shift(yrc_llist_t* list) {
 
 int yrc_llist_unshift(yrc_llist_t* list, void* item) {
   yrc_llist_node_t* node;
-  node = malloc(sizeof(*node));
+  node = alloc_node();
   if (node == NULL) {
     return 1;
   }

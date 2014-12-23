@@ -1,7 +1,8 @@
 #include "yrc-common.h"
 #include "llist.h"
 #include "tokenizer.h"
-#include <stdlib.h> /* malloc + free */
+#include "pool.h"
+#include <stdlib.h>
 #include <stdio.h>
 
 typedef struct yrc_op_s {
@@ -12,6 +13,7 @@ typedef struct yrc_op_s {
 typedef uint32_t yrc_tokenizer_state;
 
 struct yrc_tokenizer_s {
+  yrc_pool_t* token_pool;
   yrc_llist_t* tokens;
   uint64_t fpos;
   uint64_t line;
@@ -171,13 +173,21 @@ int yrc_tokenizer_init(yrc_tokenizer_t** state, size_t chunksz) {
     return 1;
   }
 
+  if (yrc_pool_init(&obj->token_pool, sizeof(yrc_token_t))) {
+    free(obj->data);
+    free(obj);
+    return 1;
+  }
+
   if (yrc_llist_init(&obj->tokens)) {
+    yrc_pool_free(obj->token_pool);
     free(obj->data);
     free(obj);
     return 1;
   }
 
   if (yrc_accum_init(&obj->primary, 512)) {
+    yrc_pool_free(obj->token_pool);
     free(obj->data);
     yrc_llist_free(obj->tokens);
     free(obj);
@@ -185,6 +195,7 @@ int yrc_tokenizer_init(yrc_tokenizer_t** state, size_t chunksz) {
   }
 
   if (yrc_accum_init(&obj->secondary, 32)) {
+    yrc_pool_free(obj->token_pool);
     free(obj->data);
     yrc_llist_free(obj->tokens);
     yrc_accum_free(obj->primary);
@@ -220,7 +231,6 @@ int _free_tokens(void* raw, size_t idx, void* ctx, int* stop) {
       free(token->info.as_whitespace.data);
       break;
   }
-  free(token);
   return 0;
 }
 
@@ -229,6 +239,7 @@ int yrc_tokenizer_free(yrc_tokenizer_t* state) {
   free(state->data);
   yrc_llist_iter(state->tokens, _free_tokens, NULL);
   yrc_llist_free(state->tokens);
+  yrc_pool_free(state->token_pool);
   yrc_accum_free(state->secondary);
   yrc_accum_free(state->primary);
   free(state);
@@ -337,7 +348,7 @@ int is_alnum(char ch) {
   if (yrc_accum_##POSTCASE(TARGET, &tokendata, &tokensize)) {\
     return 1;\
   }\
-  tk = malloc(sizeof(*tk));\
+  tk = yrc_pool_attain(tokenizer->token_pool);\
   if (tk == NULL) {\
     return 1;\
   }\
@@ -389,7 +400,7 @@ int is_alnum(char ch) {
         state = YRC_TKS_WHITESPACE;\
         goto restart;\
       FASTOP_MAP(TO_CASE)\
-        tk = malloc(sizeof(*tk));\
+        tk = yrc_pool_attain(tokenizer->token_pool);\
         if (tk == NULL) {\
           return 1;\
         }\
@@ -445,7 +456,7 @@ int is_alnum(char ch) {
     if (yrc_accum_export(primary, &tokendata, &tokensize)) {\
       return 1;\
     }\
-    tk = malloc(sizeof(*tk));\
+    tk = yrc_pool_attain(tokenizer->token_pool);\
     if (tk == NULL) {\
       return 1;\
     }\
@@ -746,7 +757,7 @@ int is_alnum(char ch) {
     if (yrc_accum_export(primary, &tokendata, &tokensize)) {\
       return 1;\
     }\
-    tk = malloc(sizeof(*tk));\
+    tk = yrc_pool_attain(tokenizer->token_pool);\
     if (tk == NULL) {\
       return 1;\
     }\
@@ -853,7 +864,6 @@ export:
   tk->end.line = line;
   tk->end.col = col;
   if (yrc_llist_push(tokenizer->tokens, tk)) {
-    free(tk);
     return 1;
   }
   *out = tk;
