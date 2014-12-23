@@ -16,7 +16,6 @@ size_t readmsg(char* data, size_t desired) {
     idx = 0;
   }
 
-  printf("read %lu\n", i);
   return i;
 }
 
