@@ -78,7 +78,7 @@ void* yrc_pool_attain(yrc_pool_t* pool) {
 retry:
   if (pool->current->free) {
     arena_pos = clz(pool->current->used_mask);
-    pool->current->used_mask &= ~1 << (63 - arena_pos);
+    pool->current->used_mask &= ~(1UL << (63 - arena_pos));
     --pool->current->free;
     return (void*)((size_t)pool->current->data + (size_t)(arena_pos * (pool->objsize + sizeof(yrc_pool_arena_t**))));
   }
