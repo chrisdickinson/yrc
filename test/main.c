@@ -1,6 +1,6 @@
 #include "yrc.h"
 #include <stdio.h>
-const char* msg = "hey >>>=>><!~:";
+const char* msg = "if (/asdf/) b\n else c";
 
 size_t readmsg(char* data, size_t desired) {
   static size_t idx = 0;
@@ -22,6 +22,8 @@ size_t readstdin(char* data, size_t desired) {
 }
 
 int main(int argc, const char** argv) {
-  yrc_parse(readmsg);
+  if (yrc_parse(readmsg)) {
+    printf("bad exit\n");
+  }
   return 0;
 }
