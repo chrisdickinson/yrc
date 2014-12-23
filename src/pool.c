@@ -19,7 +19,7 @@
 typedef struct yrc_pool_arena_s {
   struct yrc_pool_arena_s* next;
   size_t used_mask;
-  uint_fast8_t free;
+  uint_fast16_t free;
   char data[1];
 } yrc_pool_arena_t;
 
@@ -48,7 +48,7 @@ static yrc_pool_arena_t* alloc_arena(yrc_pool_t* pool) {
   iter = (yrc_pool_arena_t**)arena->data;
   for(i = 0; i < 64; ++i) {
     *iter = arena;
-    iter += (sizeof(yrc_pool_arena_t**) + pool->objsize);
+    iter = (void*)((sizeof(yrc_pool_arena_t**) + pool->objsize) + (size_t)(iter));
   }
   return arena;
 }
@@ -113,5 +113,16 @@ int yrc_pool_release(yrc_pool_t* pool, void* ptr) {
   if (arena->free > pool->current->free) {
     pool->current = arena;
   }
+  return 0;
+}
+
+int yrc_pool_free(yrc_pool_t* pool) {
+  yrc_pool_arena_t* cursor = pool->head, *next;
+  while (cursor) {
+    next = cursor->next;
+    free(cursor);
+    cursor = next;
+  }
+  free(pool);
   return 0;
 }
