@@ -1,13 +1,19 @@
 #include "yrc.h"
 #include <stdio.h>
-const char* msg = "if (/asdf/) b\n else c";
+const char* msg = "if (/asdf/) b\n else c\n";
 
 size_t readmsg(char* data, size_t desired) {
   static size_t idx = 0;
+  static size_t cnt = 0;
   size_t i = 0;
 
   while(msg[idx] && i < desired) {
     data[i++] = msg[idx++];
+  }
+
+  if (!msg[idx] && cnt < 50000) {
+    ++cnt;
+    idx = 0;
   }
 
   printf("read %lu\n", i);
