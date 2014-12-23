@@ -1,22 +1,9 @@
 #include "yrc-common.h"
 #include "pool.h"
 #include <stdlib.h> /* malloc + free */
+#include <stdio.h>
 
-#ifndef __builtin_clzll
-  int clz(unsigned long long xs) {
-    int i = sizeof(xs) << 3;
-    int o = 0;
-    while(i) {
-      if (xs & (1 << i)) break;
-      --i;
-      ++o;
-    }
-    return o;
-  }
-#else 
-  #define clz(xs) __builtin_clzll((unsigned long long)xs)
-#endif
-
+#define clz(xs) __builtin_clzll(xs)
 /**
 
   +------------+------------+---------------------------------------------+
@@ -48,6 +35,7 @@ struct yrc_pool_s {
 static yrc_pool_arena_t* alloc_arena(yrc_pool_t* pool) {
   yrc_pool_arena_t** iter;
   yrc_pool_arena_t* arena;
+  uint_fast8_t i;
   arena = malloc(sizeof(yrc_pool_arena_t) - 1 + (sizeof(yrc_pool_arena_t**) + pool->objsize) * 64);
   if (arena == NULL) {
     return NULL;
@@ -58,7 +46,7 @@ static yrc_pool_arena_t* alloc_arena(yrc_pool_t* pool) {
   arena->free = 64;
   ++pool->num_arenas;
   iter = (yrc_pool_arena_t**)arena->data;
-  for(uint_fast8_t i = 0; i < 64; ++i) {
+  for(i = 0; i < 64; ++i) {
     *iter = arena;
     iter += (sizeof(yrc_pool_arena_t**) + pool->objsize);
   }
@@ -85,13 +73,14 @@ int yrc_pool_init(yrc_pool_t** ptr, size_t objsize) {
 }
 
 void* yrc_pool_attain(yrc_pool_t* pool) {
+  yrc_pool_arena_t* cursor;
+  int arena_pos;
 retry:
   if (pool->current->free) {
-    pool->deallocs = 0;
-    int arena_pos = clz(pool->current->used_mask);
+    arena_pos = clz(pool->current->used_mask);
     pool->current->used_mask &= ~1 << (63 - arena_pos);
     --pool->current->free;
-    return (void*)pool->current->data + (size_t)(arena_pos * (pool->objsize + sizeof(yrc_pool_arena_t**)));
+    return (void*)((size_t)pool->current->data + (size_t)(arena_pos * (pool->objsize + sizeof(yrc_pool_arena_t**))));
   }
   /* if we've seen no deallocations since last time, just skip forward. */
   if (!pool->deallocs) {
@@ -99,7 +88,7 @@ retry:
     pool->last = pool->current = pool->last->next;
     goto retry;
   }
-  yrc_pool_arena_t* cursor = pool->head;
+  cursor = pool->head;
   while (cursor) {
     if (cursor->free) {
       break;
@@ -115,9 +104,9 @@ retry:
 }
 
 int yrc_pool_release(yrc_pool_t* pool, void* ptr) {
-  void* baseptr = ptr - sizeof(yrc_pool_arena_t**);
+  void* baseptr = (void*)((size_t)ptr - sizeof(yrc_pool_arena_t**));
   yrc_pool_arena_t* arena = *(yrc_pool_arena_t**)(baseptr);
-  arena->used_mask |= 1UL << ((uint_fast32_t)(baseptr - (void*)arena->data) /
+  arena->used_mask |= 1UL << ((uint_fast32_t)((size_t)baseptr - (size_t)arena->data) /
     (sizeof(yrc_pool_arena_t**) + pool->objsize));
   ++arena->free;
   pool->deallocs = 1;
