@@ -2,8 +2,6 @@
 #include "llist.h"
 #include "parser.h"
 #include "pool.h"
-#include <stdlib.h> /* malloc + free */
-#include <stdio.h>
 
 typedef enum {
   YRC_PARSE_OK,
@@ -497,9 +495,6 @@ static int advance(yrc_parser_state_t* parser, enum yrc_scan_allow_regexp allow_
 SYMBOLS(STATE)
 #undef STATE
 
-  printf("unhandled token %d", token->type);
-  yrc_token_repr(token);
-  printf("\n");
   /* unhandled token */
   return 1;
 }
