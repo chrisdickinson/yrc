@@ -1,19 +1,50 @@
 #include "yrc-common.h"
 #include "pool.h"
 #include <stdlib.h> /* malloc + free */
-#include <stdio.h>
 
+// TODO: make this portable:
 #define clz(xs) __builtin_clzll(xs)
 /**
 
-  +------------+------------+---------------------------------------------+
-  | next       | used       | data                                        |
-  |            |            +----------+-----------+----------+-----------+
-  |            |            | arenaptr | obj....   | arenaptr | obj...    |
-  +------------+------------+----------+-----------+----------+-----------+
-  used "1" bits indicate "free space", "0" bits indicate "taken"
-  alloc = count leading zeros 
+arenaptr
+  |
+  V
+  +------------+------------+------------+---------------------------------------------+
+  | next       | used_mask  | free       | data                                        |
+  |            |            |            +----------+-----------+----------+-----------+
+  |            |            |            | arenaptr | obj....   | arenaptr | obj...    |
+  +------------+------------+------------+----------+-----------+----------+-----------+
+  used_mask "1" bits indicate "free space", "0" bits indicate "occupied"
+  to allocate:
+    1. find the first "1" bit (using __builtin_clzll so *hopefully* speedy) in pool->current,
+      1. if found:
+      2. set it to zero
+      3. decrement free
+      4. return pointer to obj
+    2. if not found, and pool->dealloc is not set,
+      1. create a new arena at the end of the pool, set pool->current, retry
+    3. if not found and pool->dealloc *is* set, find the first
+       arena with free space, retry.
+       4. if we're all filled up and deallocs is true, then 
+        A) we're living in a lie from which there is no waking
+        B) set deallocs to false and retry because the dream is collapsing
 
+  to deallocate:
+    1. subtract 8 from the pointer address, that is a pointer to the arena pointer
+    2. figure out the offset in the arena that the arenapointer represents,
+    3. unset that bit
+    4. increment free
+    5. set dealloc = 1
+    6. if arena->free > pool->current->free, set pool->current to this arena
+
+
+  all in all:
+  * only need to malloc once for every FREE_SIZE objects
+  * allocations out of an arena with room are O(1)
+  * allocations out of an arena without room whose pool hasn't deallocated are malloc + O(64)
+     basically O(1)
+  * allocations out of an arena without room whose pool has deallocated are O(N)
+  * deallocations are O(1) (and may help avoid O(N) search if a bunch are grouped)
 **/
 
 #define MASK_SIZE 2
@@ -22,7 +53,7 @@
 typedef struct yrc_pool_arena_s {
   struct yrc_pool_arena_s* next;
   size_t used_mask[MASK_SIZE];
-  uint_fast16_t free;
+  uint_fast32_t free;
   char data[1];
 } yrc_pool_arena_t;
 
