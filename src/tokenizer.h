@@ -22,22 +22,39 @@
   keywords -- from string to ENUM.
 **/
 #define YRC_KEYWORD_MAP(XX) \
-  XX("while", WHILE)\
-  XX("do", DO)\
-  XX("if", IF)\
-  XX("for", FOR)\
-  XX("else", ELSE)\
   XX("break", BREAK)\
+  XX("case", CASE)\
+  XX("catch", CATCH)\
+  XX("class", CLASS)\
+  XX("const", CONST)\
   XX("continue", CONTINUE)\
-  XX("return", RETURN)\
-  XX("try", TRY)\
-  XX("var", VAR)\
+  XX("debugger", DEBUGGER)\
+  XX("default", DEFAULT)\
+  XX("delete", DELETE)\
+  XX("do", DO)\
+  XX("else", ELSE)\
+  XX("export", EXPORT)\
+  XX("extends", EXTENDS)\
+  XX("finally", FINALLY)\
+  XX("for", FOR)\
+  XX("function", FUNCTION)\
+  XX("if", IF)\
+  XX("import", IMPORT)\
   XX("in", IN)\
   XX("instanceof", INSTANCEOF)\
-  XX("void", VOID)\
+  XX("new", NEW)\
+  XX("return", RETURN)\
+  XX("super", SUPER)\
+  XX("switch", SWITCH)\
+  XX("this", THIS)\
+  XX("throw", THROW)\
+  XX("try", TRY)\
   XX("typeof", TYPEOF)\
-  XX("delete", DELETE)\
-  XX("new", NEW)
+  XX("var", VAR)\
+  XX("void", VOID)\
+  XX("while", WHILE)\
+  XX("with", WITH)\
+  XX("yield", YIELD)
 
 
 /**
