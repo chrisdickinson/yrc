@@ -1,6 +1,6 @@
 #include "yrc.h"
 #include <stdio.h>
-const char* msg = "if (/asdf/) b\n else c\n";
+const char* msg = "if (/asdf/) b\n else c\nwhile(1) ok; hey ? tehre : guys\n";
 
 size_t readmsg(char* data, size_t desired) {
   static size_t idx = 0;

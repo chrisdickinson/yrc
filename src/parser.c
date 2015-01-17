@@ -359,6 +359,23 @@ static int _suffix(yrc_parser_state_t* state, yrc_ast_node_t* left, yrc_ast_node
 
 
 static int _ternary(yrc_parser_state_t* state, yrc_ast_node_t* left, yrc_ast_node_t** out) {
+  yrc_ast_node_t* node = yrc_pool_attain(state->node_pool);
+  *out = node;
+  node->kind = YRC_AST_EXPR_CONDITIONAL;
+  if (node == NULL) return 1;
+  node->data.as_conditional.test = left;
+  if (expression(state, 0, &node->data.as_conditional.consequent)) {
+    return 1;
+  }
+  if (!IS_OP(state->token, COLON)) {
+    return 1;
+  }
+  if (advance(state, YRC_ISNT_REGEXP)) {
+    return 1;
+  }
+  if (expression(state, 0, &node->data.as_conditional.alternate)) {
+    return 1;
+  }
   return 0;
 }
 
