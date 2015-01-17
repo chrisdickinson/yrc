@@ -141,6 +141,12 @@ typedef struct yrc_ast_node_literal_s {
   yrc_token_t* value;
 } yrc_ast_node_literal_t;
 
+typedef struct yrc_ast_node_while_s {
+  yrc_ast_node_t* test;
+  yrc_ast_node_t* body;
+} yrc_ast_node_while_t;
+typedef yrc_ast_node_while_t yrc_ast_node_do_while_t;
+
 struct yrc_ast_node_s {
   yrc_ast_node_type kind;
   union {
@@ -162,6 +168,8 @@ struct yrc_ast_node_s {
     yrc_ast_node_return_t       as_return;
     yrc_ast_node_unary_t        as_unary;
     yrc_ast_node_update_t       as_update;
+    yrc_ast_node_while_t        as_while;
+    yrc_ast_node_do_while_t     as_do_while;
   } data;
 };
 #endif

@@ -153,6 +153,34 @@ static int _continue(yrc_parser_state_t* state, yrc_ast_node_t** out) {
 
 
 static int _do(yrc_parser_state_t* state, yrc_ast_node_t** out) {
+  yrc_ast_node_t* node = yrc_pool_attain(state->node_pool);
+  *out = node;
+  node->kind = YRC_AST_STMT_DOWHILE;
+  if (node == NULL) return 1;
+  if (statement(state, &node->data.as_do_while.body)) {
+    return 1;
+  }
+  if (!IS_KW(state->token, WHILE)) {
+    return 1;
+  }
+  if (advance(state, YRC_ISNT_REGEXP)) {
+    return 1;
+  }
+  if (!IS_OP(state->token, LPAREN)) {
+    return 1;
+  }
+  if (advance(state, YRC_ISNT_REGEXP)) {
+    return 1;
+  }
+  if (expression(state, 0, &node->data.as_do_while.test)) {
+    return 1;
+  }
+  if (!IS_OP(state->token, RPAREN)) {
+    return 1;
+  }
+  if (advance(state, YRC_ISNT_REGEXP)) {
+    return 1;
+  }
   return 0;
 }
 
@@ -346,6 +374,28 @@ static int _var(yrc_parser_state_t* state, yrc_ast_node_t** out) {
 
 
 static int _while(yrc_parser_state_t* state, yrc_ast_node_t** out) {
+  yrc_ast_node_t* node = yrc_pool_attain(state->node_pool);
+  *out = node;
+  node->kind = YRC_AST_STMT_WHILE;
+  if (node == NULL) return 1;
+  if (!IS_OP(state->token, LPAREN)) {
+    return 1;
+  }
+  if (advance(state, YRC_ISNT_REGEXP)) {
+    return 1;
+  }
+  if (expression(state, 0, &node->data.as_while.test)) {
+    return 1;
+  }
+  if (!IS_OP(state->token, RPAREN)) {
+    return 1;
+  }
+  if (advance(state, YRC_ISNT_REGEXP)) {
+    return 1;
+  }
+  if (statement(state, &node->data.as_while.body)) {
+    return 1;
+  }
   return 0;
 }
 
