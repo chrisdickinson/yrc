@@ -3,6 +3,7 @@
 #include "tokenizer.h"
 #include "pool.h"
 #include <stdlib.h>
+#include <string.h>
 #include <stdio.h>
 
 typedef struct yrc_op_s {
@@ -918,6 +919,17 @@ void yrc_token_repr(yrc_token_t* tk) {
   printf(" ⊐\n");
 }
 
+int yrc_tokenizer_promote_keyword(yrc_tokenizer_t* tokenizer, yrc_token_t* token) {
+  const char* target = TOKEN_OPERATOR_MAP[token->info.as_keyword];
+  size_t size = strlen(target);
+  char* data = malloc(size);
+
+  memcpy(data, target, size);
+  token->type = YRC_TOKEN_IDENT;
+  token->info.as_ident.size = size;
+  token->info.as_ident.data = data;
+  return 0;
+}
 
 int yrc_tokenizer_eof(yrc_tokenizer_t* state) {
   return state->eof;

@@ -232,4 +232,5 @@ int yrc_tokenizer_init(yrc_tokenizer_t**, size_t);
 int yrc_tokenizer_scan(yrc_tokenizer_t*, yrc_readcb, yrc_token_t**, enum yrc_scan_allow_regexp);
 int yrc_tokenizer_free(yrc_tokenizer_t*);
 int yrc_tokenizer_eof(yrc_tokenizer_t*);
+int yrc_tokenizer_promote_keyword(yrc_tokenizer_t*, yrc_token_t*);
 #endif
