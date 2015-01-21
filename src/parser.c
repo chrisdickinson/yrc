@@ -320,7 +320,7 @@ static int _prefix_object(yrc_parser_state_t* state, yrc_token_t* orig, yrc_ast_
 
     if (state->token->type == YRC_TOKEN_IDENT && state->token->info.as_ident.size == 3) {
       if (state->token->info.as_ident.data[1] == 'e' &&
-          state->token->info.as_ident.data[1] == 't') {
+          state->token->info.as_ident.data[2] == 't') {
         switch(state->token->info.as_ident.data[0]) {
           case 's':
           item->data.as_property.type |= YRC_PROP_SPC | YRC_PROP_SET;
@@ -348,28 +348,28 @@ not_getter_or_setter:
         goto cleanup;
       }
       CONSUME(state, IS_OP, RBRACK);
-    }
+    } else {
+      switch (state->token->type) {
+        case YRC_TOKEN_KEYWORD:
+          shorthand_prop_ok = 0;
+          if (yrc_tokenizer_promote_keyword(state->tokenizer, state->token)) {
+            goto cleanup;
+          }
+        case YRC_TOKEN_STRING: 
+          shorthand_prop_ok = 0;
+        case YRC_TOKEN_IDENT:
+          if (_ident(state, state->token, &item->data.as_property.key)) {
+            goto cleanup;
+          }
+        break;
+        default:
+        /* XXX: unexpected <anything-other-than-words> */
+        goto cleanup;
+      }
 
-    switch (state->token->type) {
-      case YRC_TOKEN_KEYWORD:
-        shorthand_prop_ok = 0;
-        if (yrc_tokenizer_promote_keyword(state->tokenizer, state->token)) {
-          goto cleanup;
-        }
-      case YRC_TOKEN_STRING: 
-        shorthand_prop_ok = 0;
-      case YRC_TOKEN_IDENT:
-        if (_ident(state, state->token, &item->data.as_property.key)) {
-          goto cleanup;
-        }
-      break;
-      default:
-      /* XXX: unexpected <anything-other-than-words> */
-      goto cleanup;
-    }
-
-    if (advance(state, YRC_ISNT_REGEXP)) {
-      goto cleanup;
+      if (advance(state, YRC_ISNT_REGEXP)) {
+        goto cleanup;
+      }
     }
 
     if (IS_OP(state->token, LPAREN)) {
@@ -402,7 +402,15 @@ shorthand:
     if (yrc_llist_push(node->data.as_object.properties, item)) {
       goto cleanup;
     }
-  } while(IS_OP(state->token, COMMA));
+
+    if (!IS_OP(state->token, COMMA)) {
+      break;
+    }
+
+    if (advance(state, YRC_ISNT_REGEXP)) {
+      return 1;
+    }
+  } while(1);
 
   /* consume `}` */
   CONSUME_CLEAN(state, IS_OP, RBRACE, {
@@ -655,6 +663,7 @@ static int _ident(yrc_parser_state_t* state, yrc_token_t* orig, yrc_ast_node_t**
   XX(null_rbrack,    OPERATOR, as_operator == YRC_OP_RBRACK,      0, NULL, NULL, NULL)\
   XX(null_rbrace,    OPERATOR, as_operator == YRC_OP_RBRACE,      0, NULL, NULL, NULL)\
   XX(null_colon,     OPERATOR, as_operator == YRC_OP_COLON,       0, NULL, NULL, NULL)\
+  XX(null_comma,     OPERATOR, as_operator == YRC_OP_COMMA,       0, NULL, NULL, NULL)\
   XX(null_semicolon, OPERATOR, as_operator == YRC_OP_SEMICOLON,   0, NULL, NULL, NULL)
 
 static yrc_parser_symbol_t sym_ident = {_ident, NULL, NULL, 0};
