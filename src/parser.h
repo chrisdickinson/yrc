@@ -19,6 +19,15 @@ struct yrc_parser_symbol_s {
   int64_t                 lbp;
 };
 
+typedef enum {
+  YRC_PROP_SPC=1,
+  YRC_PROP_GET=2,
+  YRC_PROP_SET=4,
+  YRC_PROP_COMPUTED=8,
+  YRC_PROP_SHORTHAND=16,
+  YRC_PROP_SHORTHAND_METHOD=32
+} yrc_property_flags;
+
 #define AST_TYPE_MAP(XX) \
   XX(PROGRAM)\
   XX(STMT_BLOCK)\
@@ -33,6 +42,7 @@ struct yrc_parser_symbol_s {
   XX(STMT_RETURN)\
   XX(STMT_THROW)\
   XX(STMT_TRY)\
+  XX(STMT_CATCH)\
   XX(STMT_WHILE)\
   XX(STMT_DOWHILE)\
   XX(STMT_FOR)\
@@ -113,6 +123,10 @@ typedef struct yrc_ast_node_array_s {
   yrc_llist_t* elements;
 } yrc_ast_node_array_t;
 
+typedef struct yrc_ast_node_object_s {
+  yrc_llist_t* properties;
+} yrc_ast_node_object_t;
+
 typedef struct yrc_ast_node_property_s {
   yrc_ast_node_t* key;
   yrc_ast_node_t* expression;
@@ -147,6 +161,17 @@ typedef struct yrc_ast_node_while_s {
 } yrc_ast_node_while_t;
 typedef yrc_ast_node_while_t yrc_ast_node_do_while_t;
 
+typedef struct yrc_ast_node_catch_s {
+  yrc_ast_node_t* param;
+  yrc_ast_node_t* body;
+} yrc_ast_node_catch_t;
+
+typedef struct yrc_ast_node_try_s {
+  yrc_ast_node_t* block;
+  yrc_ast_node_t* handler;
+  yrc_ast_node_t* finalizer;
+} yrc_ast_node_try_t;
+
 struct yrc_ast_node_s {
   yrc_ast_node_type kind;
   union {
@@ -156,6 +181,7 @@ struct yrc_ast_node_s {
     yrc_ast_node_block_t        as_block;
     yrc_ast_node_break_t        as_break;
     yrc_ast_node_call_t         as_call;
+    yrc_ast_node_catch_t        as_catch;
     yrc_ast_node_conditional_t  as_conditional;
     yrc_ast_node_continue_t     as_continue;
     yrc_ast_node_exprstmt_t     as_exprstmt;
@@ -163,9 +189,11 @@ struct yrc_ast_node_s {
     yrc_ast_node_if_t           as_if;
     yrc_ast_node_literal_t      as_literal;
     yrc_ast_node_member_t       as_member;
+    yrc_ast_node_object_t       as_object;
     yrc_ast_node_program_t      as_program;
     yrc_ast_node_property_t     as_property;
     yrc_ast_node_return_t       as_return;
+    yrc_ast_node_try_t          as_try;
     yrc_ast_node_unary_t        as_unary;
     yrc_ast_node_update_t       as_update;
     yrc_ast_node_while_t        as_while;

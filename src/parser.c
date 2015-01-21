@@ -33,12 +33,18 @@ struct yrc_parser_state_s {
   yrc_parse_error_t     error;
 };
 
+#define CONSUME_CLEAN(state, CHECK, T, CLEANUP)\
+  do {\
+  if (!CHECK(state->token, T)) { CLEANUP; return 1; }\
+  if (advance(state, YRC_ISNT_REGEXP)) { CLEANUP; return 1; }\
+  } while(0);
+#define CONSUME(state, CHECK, T) CONSUME_CLEAN(state, CHECK, T, {});
 
 static int advance(yrc_parser_state_t*, enum yrc_scan_allow_regexp);
 static int expression(yrc_parser_state_t*, int, yrc_ast_node_t**);
 static int statement(yrc_parser_state_t*, yrc_ast_node_t**);
 static int statements(yrc_parser_state_t*, yrc_llist_t*);
-static int consume(yrc_parser_state_t*, yrc_token_operator_t);
+static int _ident(yrc_parser_state_t*, yrc_token_t*, yrc_ast_node_t**);
 static yrc_token_t eof = {YRC_TOKEN_EOF, {0, 0, 0}, {0, 0, 0}, {{0, 0, NULL}}};
 static yrc_parser_symbol_t sym_eof = {NULL, NULL, NULL, 0};
 
@@ -56,10 +62,9 @@ static int _block(yrc_parser_state_t* state, yrc_ast_node_t** out) {
     yrc_llist_free(node->data.as_block.body);
     return 1;
   }
-  if (consume(state, YRC_OP_RBRACE) || advance(state, YRC_ISNT_REGEXP)) {
+  CONSUME_CLEAN(state, IS_OP, RBRACE, {
     yrc_llist_free(node->data.as_block.body);
-    return E_YRC_PARSE_UNEXPECTED_TOKEN;
-  }
+  });
   *out = (yrc_ast_node_t*)node;
   return 0;
 }
@@ -122,18 +127,13 @@ static int _call(yrc_parser_state_t* state, yrc_ast_node_t* left, yrc_ast_node_t
     }
   } while(IS_OP(state->token, COMMA));
 
-  /* consume `)` */
-  if (advance(state, YRC_ISNT_REGEXP)) {
-    goto cleanup;
-  }
-  if (consume(state, YRC_OP_RPAREN)) {
-    goto cleanup;
-  }
+  CONSUME_CLEAN(state, IS_OP, RPAREN, {
+    yrc_llist_free(node->data.as_call.arguments);
+  });
   *out = (yrc_ast_node_t*)node;
   return 0;
 
 cleanup:
-  yrc_llist_free(node->data.as_call.arguments);
   return 1;
 }
 
@@ -160,27 +160,12 @@ static int _do(yrc_parser_state_t* state, yrc_ast_node_t** out) {
   if (statement(state, &node->data.as_do_while.body)) {
     return 1;
   }
-  if (!IS_KW(state->token, WHILE)) {
-    return 1;
-  }
-  if (advance(state, YRC_ISNT_REGEXP)) {
-    return 1;
-  }
-  if (!IS_OP(state->token, LPAREN)) {
-    return 1;
-  }
-  if (advance(state, YRC_ISNT_REGEXP)) {
-    return 1;
-  }
+  CONSUME(state, IS_KW, WHILE);
+  CONSUME(state, IS_OP, LPAREN);
   if (expression(state, 0, &node->data.as_do_while.test)) {
     return 1;
   }
-  if (!IS_OP(state->token, RPAREN)) {
-    return 1;
-  }
-  if (advance(state, YRC_ISNT_REGEXP)) {
-    return 1;
-  }
+  CONSUME(state, IS_OP, RPAREN);
   return 0;
 }
 
@@ -196,15 +181,11 @@ static int _if(yrc_parser_state_t* state, yrc_ast_node_t** out) {
   node->kind = YRC_AST_STMT_IF;
   if (node == NULL) return 1;
   node->data.as_if.alternate = NULL;
-  if (!IS_OP(state->token, LPAREN) || advance(state, YRC_ISNT_REGEXP)) {
-    return 1;
-  }
+  CONSUME(state, IS_OP, LPAREN);
   if (expression(state, 0, &node->data.as_if.test)) {
     return 1;
   }
-  if (!IS_OP(state->token, RPAREN) || advance(state, YRC_ISNT_REGEXP)) {
-    return 1;
-  }
+  CONSUME(state, IS_OP, RPAREN);
   if (statement(state, &node->data.as_if.consequent)) {
     return 1;
   }
@@ -297,9 +278,9 @@ static int _prefix_array(yrc_parser_state_t* state, yrc_token_t* orig, yrc_ast_n
   } while(IS_OP(state->token, COMMA));
 
   /* consume `]` */
-  if (advance(state, YRC_ISNT_REGEXP)) {
+  CONSUME_CLEAN(state, IS_OP, RBRACK, {
     goto cleanup;
-  }
+  });
   *out = node;
   return 0;
 cleanup:
@@ -310,9 +291,123 @@ cleanup:
 
 static int _prefix_object(yrc_parser_state_t* state, yrc_token_t* orig, yrc_ast_node_t** out) {
   /* this could be either a block or destructuring */
+  /* TODO: support es6 */
+  yrc_ast_node_t* node = yrc_pool_attain(state->node_pool);
+  yrc_ast_node_t* item;
+  if (node == NULL) {
+    return 1;
+  }
+  node->kind = YRC_AST_EXPR_OBJECT;
+  *out = node;
+  if (yrc_llist_init(&node->data.as_array.elements)) {
+    return 1;
+  }
+  do {
+    item = yrc_pool_attain(state->node_pool);
+    item->kind = YRC_AST_EXPR_PROPERTY;
+    if (item == NULL) {
+      goto cleanup;
+    }
+
+    if (state->token->type == YRC_TOKEN_IDENT && state->token->info.as_ident.size == 3) {
+      if (state->token->info.as_ident.data[1] == 'e' &&
+          state->token->info.as_ident.data[1] == 't') {
+        switch(state->token->info.as_ident.data[0]) {
+          case 's':
+          item->data.as_property.type |= YRC_PROP_SPC | YRC_PROP_SET;
+          break;
+          case 'g':
+          item->data.as_property.type |= YRC_PROP_SPC | YRC_PROP_GET;
+          break;
+          default:
+          goto not_getter_or_setter;
+        }
+        if (advance(state, YRC_ISNT_REGEXP)) {
+          goto cleanup;
+        }
+      }
+    }
+not_getter_or_setter:
+    if (IS_OP(state->token, LBRACK)) {
+      item->data.as_property.type |= YRC_PROP_SPC | YRC_PROP_COMPUTED;
+      if (advance(state, YRC_ISNT_REGEXP)) {
+        goto cleanup;
+      }
+      if (expression(state, 0, &item->data.as_property.key)) {
+        goto cleanup;
+      }
+      CONSUME(state, IS_OP, RBRACK);
+    }
+
+    switch (state->token->type) {
+      case YRC_TOKEN_KEYWORD:
+        if (yrc_tokenizer_promote_keyword(state->tokenizer, state->token)) {
+          goto cleanup;
+        }
+      case YRC_TOKEN_STRING: 
+      case YRC_TOKEN_IDENT:
+        if (_ident(state, state->token, &item->data.as_property.key)) {
+          goto cleanup;
+        }
+      break;
+      default:
+      /* XXX: unexpected <anything-other-than-words> */
+      goto cleanup;
+    }
+
+    if (advance(state, YRC_ISNT_REGEXP)) {
+      goto cleanup;
+    }
+
+    if (IS_OP(state->token, LPAREN)) {
+      /* XXX: support ES6 shorthand methods */
+      goto cleanup;
+    }
+
+    /* shorthand, like `{x}` or `{z, y: 3}` */
+    if (IS_OP(state->token, RBRACE) || IS_OP(state->token, COMMA)) {
+      item->data.as_property.expression = item->data.as_property.key;
+      item->data.as_property.type |= YRC_PROP_SHORTHAND;
+      goto shorthand;
+    }
+
+    if (!IS_OP(state->token, COLON)) {
+      goto cleanup;
+    }
+
+    if (advance(state, YRC_ISNT_REGEXP)) {
+      goto cleanup;
+    }
+
+    if (expression(state, 0, &item->data.as_property.expression)) {
+      goto cleanup;
+    }
+
+shorthand:
+    if (yrc_llist_push(node->data.as_object.properties, item)) {
+      goto cleanup;
+    }
+  } while(IS_OP(state->token, COMMA));
+
+  /* consume `]` */
+  CONSUME_CLEAN(state, IS_OP, RBRACE, {
+    goto cleanup;
+  });
+  return 0;
+cleanup:
+  yrc_llist_free(node->data.as_array.elements);
+  return 1;
+}
+
+
+static int _function(yrc_parser_state_t* state, yrc_token_t* orig, yrc_ast_node_t** out) {
   return 0;
 }
 
+
+static int _functionstmt(yrc_parser_state_t* state, yrc_ast_node_t** out) {
+  return 0;
+}
 
 static int _prefix_paren(yrc_parser_state_t* state, yrc_token_t* orig, yrc_ast_node_t** out) {
   /* this could be either `(a, b, c)` OR `(a, b) => { }` */
@@ -367,12 +462,7 @@ static int _ternary(yrc_parser_state_t* state, yrc_ast_node_t* left, yrc_ast_nod
   if (expression(state, 0, &node->data.as_conditional.consequent)) {
     return 1;
   }
-  if (!IS_OP(state->token, COLON)) {
-    return 1;
-  }
-  if (advance(state, YRC_ISNT_REGEXP)) {
-    return 1;
-  }
+  CONSUME(state, IS_OP, COLON);
   if (expression(state, 0, &node->data.as_conditional.alternate)) {
     return 1;
   }
@@ -380,7 +470,61 @@ static int _ternary(yrc_parser_state_t* state, yrc_ast_node_t* left, yrc_ast_nod
 }
 
 
+static int _catch(yrc_parser_state_t* state, yrc_ast_node_t** out) {
+  yrc_ast_node_t* node = yrc_pool_attain(state->node_pool);
+  *out = node;
+  node->kind = YRC_AST_STMT_CATCH;
+  if (node == NULL) return 1;
+  CONSUME(state, IS_OP, LPAREN);
+  if (expression(state, 0, &node->data.as_catch.param)) {
+    return 1;
+  }
+  CONSUME(state, IS_OP, RPAREN);
+  CONSUME(state, IS_OP, LBRACE);
+  if (_block(state, &node->data.as_catch.body)) {
+    return 1;
+  }
+  if (IS_KW(state->token, FINALLY)) {
+    if (advance(state, YRC_ISNT_REGEXP)) {
+      return 1;
+    }
+    CONSUME(state, IS_OP, LBRACE);
+    if (_block(state, &node->data.as_try.finalizer)) {
+      return 1;
+    }
+  }
+  return 0;
+}
+
+
 static int _try(yrc_parser_state_t* state, yrc_ast_node_t** out) {
+  yrc_ast_node_t* node = yrc_pool_attain(state->node_pool);
+  *out = node;
+  node->kind = YRC_AST_STMT_TRY;
+  if (node == NULL) return 1;
+  CONSUME(state, IS_OP, LBRACE);
+  if (_block(state, &node->data.as_try.block)) {
+    return 1;
+  }
+
+  if (IS_KW(state->token, CATCH)) {
+    if (advance(state, YRC_ISNT_REGEXP)) {
+      return 1;
+    }
+    _catch(state, &node->data.as_try.handler);
+  } else if (IS_KW(state->token, FINALLY)) {
+    node->data.as_try.handler = NULL;
+    if (advance(state, YRC_ISNT_REGEXP)) {
+      return 1;
+    }
+    CONSUME(state, IS_OP, LBRACE);
+    if (_block(state, &node->data.as_try.finalizer)) {
+      return 1;
+    }
+  } else {
+    return 1;
+  }
+
   return 0;
 }
 
@@ -395,21 +539,11 @@ static int _while(yrc_parser_state_t* state, yrc_ast_node_t** out) {
   *out = node;
   node->kind = YRC_AST_STMT_WHILE;
   if (node == NULL) return 1;
-  if (!IS_OP(state->token, LPAREN)) {
-    return 1;
-  }
-  if (advance(state, YRC_ISNT_REGEXP)) {
-    return 1;
-  }
+  CONSUME(state, IS_OP, LPAREN);
   if (expression(state, 0, &node->data.as_while.test)) {
     return 1;
   }
-  if (!IS_OP(state->token, RPAREN)) {
-    return 1;
-  }
-  if (advance(state, YRC_ISNT_REGEXP)) {
-    return 1;
-  }
+  CONSUME(state, IS_OP, RPAREN);
   if (statement(state, &node->data.as_while.body)) {
     return 1;
   }
@@ -451,6 +585,7 @@ static int _ident(yrc_parser_state_t* state, yrc_token_t* orig, yrc_ast_node_t**
   XX(stmttry,        KEYWORD, as_keyword == YRC_KW_TRY,         0, NULL,      NULL, _try)\
   XX(stmtvar,        KEYWORD, as_keyword == YRC_KW_VAR,         0, NULL,      NULL, _var)\
   XX(exprin,         KEYWORD, as_keyword == YRC_KW_IN,         50, NULL,      _infix, NULL)\
+  XX(exprfunction,   KEYWORD, as_keyword == YRC_KW_FUNCTION,    0, _function, NULL, _functionstmt)\
   XX(exprvoid,       KEYWORD, as_keyword == YRC_KW_VOID,        0, _prefix,   NULL, NULL)\
   XX(exprtypeof,     KEYWORD, as_keyword == YRC_KW_TYPEOF,      0, _prefix,   NULL, NULL)\
   XX(exprdelete,     KEYWORD, as_keyword == YRC_KW_DELETE,      0, _prefix,   NULL, NULL)\
@@ -649,13 +784,6 @@ static int statements(yrc_parser_state_t* parser, yrc_llist_t* out) {
     }
   }
   return 0;
-}
-
-static int consume(yrc_parser_state_t* parser, yrc_token_operator_t type) {
-  return !(
-    parser->token->type == YRC_TOKEN_OPERATOR &&
-    parser->token->info.as_operator == type
-  );
 }
 
 /* 16K chunks by default */
