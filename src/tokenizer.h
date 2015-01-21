@@ -42,6 +42,7 @@
   XX("import", IMPORT)\
   XX("in", IN)\
   XX("instanceof", INSTANCEOF)\
+  XX("let", LET)\
   XX("new", NEW)\
   XX("return", RETURN)\
   XX("super", SUPER)\
