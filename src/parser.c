@@ -51,10 +51,10 @@ static yrc_parser_symbol_t sym_eof = {NULL, NULL, NULL, 0};
 
 static int _block(yrc_parser_state_t* state, yrc_ast_node_t** out) {
   yrc_ast_node_t* node = yrc_pool_attain(state->node_pool);
-  node->kind = YRC_AST_STMT_BLOCK;
   if (node == NULL) {
     return 1;
   }
+  node->kind = YRC_AST_STMT_BLOCK;
   if (yrc_llist_init(&node->data.as_block.body)) {
     return 1;
   }
@@ -112,6 +112,9 @@ static int _regexp_eq(yrc_parser_state_t* state, yrc_token_t* orig, yrc_ast_node
 static int _call(yrc_parser_state_t* state, yrc_ast_node_t* left, yrc_ast_node_t** out) {
   yrc_ast_node_t* node = yrc_pool_attain(state->node_pool);
   yrc_ast_node_t* item;
+  if (node == NULL) {
+    return 1;
+  }
   node->kind = YRC_AST_EXPR_CALL;
   node->data.as_call.callee = left;
   if (yrc_llist_init(&node->data.as_call.arguments)) {
@@ -155,8 +158,8 @@ static int _continue(yrc_parser_state_t* state, yrc_ast_node_t** out) {
 static int _do(yrc_parser_state_t* state, yrc_ast_node_t** out) {
   yrc_ast_node_t* node = yrc_pool_attain(state->node_pool);
   *out = node;
-  node->kind = YRC_AST_STMT_DOWHILE;
   if (node == NULL) return 1;
+  node->kind = YRC_AST_STMT_DOWHILE;
   if (statement(state, &node->data.as_do_while.body)) {
     return 1;
   }
@@ -178,8 +181,8 @@ static int _for(yrc_parser_state_t* state, yrc_ast_node_t** out) {
 static int _if(yrc_parser_state_t* state, yrc_ast_node_t** out) {
   yrc_ast_node_t* node = yrc_pool_attain(state->node_pool);
   *out = node;
-  node->kind = YRC_AST_STMT_IF;
   if (node == NULL) return 1;
+  node->kind = YRC_AST_STMT_IF;
   node->data.as_if.alternate = NULL;
   CONSUME(state, IS_OP, LPAREN);
   if (expression(state, 0, &node->data.as_if.test)) {
@@ -207,16 +210,15 @@ int NAME(yrc_parser_state_t* state, yrc_ast_node_t* left, yrc_ast_node_t** out) 
   yrc_parser_symbol_t* sym = state->symbol;\
   yrc_token_t* token = state->token;\
   yrc_ast_node_t* node = yrc_pool_attain(state->node_pool);\
-  node->kind = KIND;\
   sym;token;\
   if (node == NULL) {\
     return 1;\
   }\
+  node->kind = KIND;\
   node->data.as_binary.left = left;\
   if (expression(state, state->symbol->lbp + RBP_MOD, &node->data.as_binary.right)) {\
     return 1;\
   }\
-  node->kind = KIND;\
   do { EXTRA } while(0);\
   *out = (yrc_ast_node_t*)node;\
   return 0;\
@@ -304,10 +306,10 @@ static int _prefix_object(yrc_parser_state_t* state, yrc_token_t* orig, yrc_ast_
   }
   do {
     item = yrc_pool_attain(state->node_pool);
-    item->kind = YRC_AST_EXPR_PROPERTY;
     if (item == NULL) {
       goto cleanup;
     }
+    item->kind = YRC_AST_EXPR_PROPERTY;
 
     if (state->token->type == YRC_TOKEN_IDENT && state->token->info.as_ident.size == 3) {
       if (state->token->info.as_ident.data[1] == 'e' &&
@@ -456,8 +458,8 @@ static int _suffix(yrc_parser_state_t* state, yrc_ast_node_t* left, yrc_ast_node
 static int _ternary(yrc_parser_state_t* state, yrc_ast_node_t* left, yrc_ast_node_t** out) {
   yrc_ast_node_t* node = yrc_pool_attain(state->node_pool);
   *out = node;
-  node->kind = YRC_AST_EXPR_CONDITIONAL;
   if (node == NULL) return 1;
+  node->kind = YRC_AST_EXPR_CONDITIONAL;
   node->data.as_conditional.test = left;
   if (expression(state, 0, &node->data.as_conditional.consequent)) {
     return 1;
@@ -473,8 +475,8 @@ static int _ternary(yrc_parser_state_t* state, yrc_ast_node_t* left, yrc_ast_nod
 static int _catch(yrc_parser_state_t* state, yrc_ast_node_t** out) {
   yrc_ast_node_t* node = yrc_pool_attain(state->node_pool);
   *out = node;
-  node->kind = YRC_AST_STMT_CATCH;
   if (node == NULL) return 1;
+  node->kind = YRC_AST_STMT_CATCH;
   CONSUME(state, IS_OP, LPAREN);
   if (expression(state, 0, &node->data.as_catch.param)) {
     return 1;
@@ -500,8 +502,8 @@ static int _catch(yrc_parser_state_t* state, yrc_ast_node_t** out) {
 static int _try(yrc_parser_state_t* state, yrc_ast_node_t** out) {
   yrc_ast_node_t* node = yrc_pool_attain(state->node_pool);
   *out = node;
-  node->kind = YRC_AST_STMT_TRY;
   if (node == NULL) return 1;
+  node->kind = YRC_AST_STMT_TRY;
   CONSUME(state, IS_OP, LBRACE);
   if (_block(state, &node->data.as_try.block)) {
     return 1;
@@ -537,8 +539,8 @@ static int _var(yrc_parser_state_t* state, yrc_ast_node_t** out) {
 static int _while(yrc_parser_state_t* state, yrc_ast_node_t** out) {
   yrc_ast_node_t* node = yrc_pool_attain(state->node_pool);
   *out = node;
-  node->kind = YRC_AST_STMT_WHILE;
   if (node == NULL) return 1;
+  node->kind = YRC_AST_STMT_WHILE;
   CONSUME(state, IS_OP, LPAREN);
   if (expression(state, 0, &node->data.as_while.test)) {
     return 1;
