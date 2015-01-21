@@ -602,6 +602,7 @@ static int _ident(yrc_parser_state_t* state, yrc_token_t* orig, yrc_ast_node_t**
   XX(exprnew,        KEYWORD, as_keyword == YRC_KW_NEW,         0, _prefix,   NULL, NULL)\
   XX(exprinstanceof, KEYWORD, as_keyword == YRC_KW_INSTANCEOF, 50, NULL,      _infix, NULL)\
   XX(null_else,      KEYWORD, as_keyword == YRC_KW_ELSE,        0, NULL, NULL, NULL)\
+  XX(null_catch,     KEYWORD, as_keyword == YRC_KW_CATCH,       0, NULL, NULL, NULL)\
   XX(exprlparen,     OPERATOR, as_operator == YRC_OP_LPAREN,     80, _prefix_paren, _call, NULL)\
   XX(lbrace,         OPERATOR, as_operator == YRC_OP_LBRACE,      0, _prefix_object, NULL, _block)\
   XX(exprdot,        OPERATOR, as_operator == YRC_OP_DOT,        80, NULL, _dynget, NULL)\
