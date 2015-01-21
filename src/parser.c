@@ -296,6 +296,7 @@ static int _prefix_object(yrc_parser_state_t* state, yrc_token_t* orig, yrc_ast_
   /* TODO: support es6 */
   yrc_ast_node_t* node = yrc_pool_attain(state->node_pool);
   yrc_ast_node_t* item;
+  uint_fast8_t shorthand_prop_ok = 0;
   if (node == NULL) {
     return 1;
   }
@@ -305,6 +306,7 @@ static int _prefix_object(yrc_parser_state_t* state, yrc_token_t* orig, yrc_ast_
     return 1;
   }
   do {
+    shorthand_prop_ok = 1;
     item = yrc_pool_attain(state->node_pool);
     if (item == NULL) {
       goto cleanup;
@@ -324,6 +326,7 @@ static int _prefix_object(yrc_parser_state_t* state, yrc_token_t* orig, yrc_ast_
           default:
           goto not_getter_or_setter;
         }
+        shorthand_prop_ok = 0;
         if (advance(state, YRC_ISNT_REGEXP)) {
           goto cleanup;
         }
@@ -331,6 +334,7 @@ static int _prefix_object(yrc_parser_state_t* state, yrc_token_t* orig, yrc_ast_
     }
 not_getter_or_setter:
     if (IS_OP(state->token, LBRACK)) {
+      shorthand_prop_ok = 0;
       item->data.as_property.type |= YRC_PROP_SPC | YRC_PROP_COMPUTED;
       if (advance(state, YRC_ISNT_REGEXP)) {
         goto cleanup;
@@ -343,10 +347,12 @@ not_getter_or_setter:
 
     switch (state->token->type) {
       case YRC_TOKEN_KEYWORD:
+        shorthand_prop_ok = 0;
         if (yrc_tokenizer_promote_keyword(state->tokenizer, state->token)) {
           goto cleanup;
         }
       case YRC_TOKEN_STRING: 
+        shorthand_prop_ok = 0;
       case YRC_TOKEN_IDENT:
         if (_ident(state, state->token, &item->data.as_property.key)) {
           goto cleanup;
@@ -363,11 +369,13 @@ not_getter_or_setter:
 
     if (IS_OP(state->token, LPAREN)) {
       /* XXX: support ES6 shorthand methods */
+      shorthand_prop_ok = 0;
       goto cleanup;
     }
 
     /* shorthand, like `{x}` or `{z, y: 3}` */
-    if (IS_OP(state->token, RBRACE) || IS_OP(state->token, COMMA)) {
+    if (shorthand_prop_ok &&
+        (IS_OP(state->token, RBRACE) || IS_OP(state->token, COMMA))) {
       item->data.as_property.expression = item->data.as_property.key;
       item->data.as_property.type |= YRC_PROP_SHORTHAND;
       goto shorthand;
