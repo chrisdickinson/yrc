@@ -302,7 +302,12 @@ static int _prefix_object(yrc_parser_state_t* state, yrc_token_t* orig, yrc_ast_
   }
   node->kind = YRC_AST_EXPR_OBJECT;
   *out = node;
-  if (yrc_llist_init(&node->data.as_array.elements)) {
+
+  if (IS_OP(state->token, RBRACE)) {
+    node->data.as_object.properties = NULL;
+    return advance(state, YRC_ISNT_REGEXP);
+  }
+  if (yrc_llist_init(&node->data.as_object.properties)) {
     return 1;
   }
   do {
@@ -399,13 +404,13 @@ shorthand:
     }
   } while(IS_OP(state->token, COMMA));
 
-  /* consume `]` */
+  /* consume `}` */
   CONSUME_CLEAN(state, IS_OP, RBRACE, {
     goto cleanup;
   });
   return 0;
 cleanup:
-  yrc_llist_free(node->data.as_array.elements);
+  yrc_llist_free(node->data.as_object.properties);
   return 1;
 }
 
