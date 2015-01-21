@@ -1,6 +1,7 @@
 #include "yrc-common.h"
 #include "pool.h"
 #include <stdlib.h> /* malloc + free */
+#include <string.h> /* memset */
 
 // TODO: make this portable:
 #define clz(xs) __builtin_clzll(xs)
@@ -47,7 +48,7 @@ arenaptr
   * deallocations are O(1) (and may help avoid O(N) search if a bunch are grouped)
 **/
 
-#define MASK_SIZE 2
+#define MASK_SIZE 4
 #define FREE_SIZE (MASK_SIZE * 64)
 
 typedef struct yrc_pool_arena_s {
@@ -75,9 +76,7 @@ static yrc_pool_arena_t* alloc_arena(yrc_pool_t* pool) {
     return NULL;
   }
   arena->next = NULL;
-  for(i = 0; i < MASK_SIZE; ++i) {
-    arena->used_mask[i] = 0xFFFFFFFFFFFFFFFF;
-  }
+  memset(arena->used_mask, 0xFF, MASK_SIZE * 8);
   arena->free = FREE_SIZE;
   ++pool->num_arenas;
   iter = (yrc_pool_arena_t**)arena->data;
