@@ -203,9 +203,9 @@ typedef struct yrc_token_whitespace_s {
 } yrc_token_whitespace_t;
 
 typedef struct yrc_position_s {
-  uint64_t line;
-  uint64_t col;
-  uint64_t fpos;
+  FPOS_T line;
+  FPOS_T col;
+  FPOS_T fpos;
 } yrc_position_t;
 
 typedef struct yrc_token_s {

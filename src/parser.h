@@ -16,7 +16,7 @@ struct yrc_parser_symbol_s {
   yrc_parser_nud_t        nud;
   yrc_parser_led_t        led;
   yrc_parser_std_t        std;
-  int64_t                 lbp;
+  uint_fast32_t           lbp;
 };
 
 typedef enum {

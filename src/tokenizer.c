@@ -6,6 +6,13 @@
 #include <string.h>
 #include <stdio.h>
 
+/* extends yrc_error_t */
+typedef struct yrc_tokenizer_error_s {
+  YRC_ERROR_BASE;
+  yrc_token_t got;
+  yrc_token_t expected;
+} yrc_parse_error_t;
+
 typedef struct yrc_op_s {
   int c;
   struct yrc_op_s* next[4];
@@ -16,9 +23,9 @@ typedef uint32_t yrc_tokenizer_state;
 struct yrc_tokenizer_s {
   yrc_pool_t* token_pool;
   yrc_llist_t* tokens;
-  uint64_t fpos;
-  uint64_t line;
-  uint64_t col;
+  FPOS_T fpos;
+  FPOS_T line;
+  FPOS_T col;
   size_t offset;
   size_t start;
   size_t size;
@@ -805,7 +812,7 @@ int yrc_tokenizer_scan(
     yrc_readcb read, 
     yrc_token_t** out, 
     enum yrc_scan_allow_regexp regexp_mode) {
-  uint64_t last_fpos, last_line, last_col, fpos, line, col;
+  FPOS_T last_fpos, last_line, last_col, fpos, line, col;
   yrc_tokenizer_state state = YRC_TKS_DEFAULT;
   size_t offset, start, diff, size, tokensize;
   yrc_accum_t *primary, *secondary;

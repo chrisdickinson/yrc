@@ -1,6 +1,6 @@
 #include "yrc.h"
 #include <stdio.h>
-const char* msg = "if (/asdf/) b\n else c\nwhile(1) ok; hey ? tehre : guys\n";
+const char* msg = "try { abba = {get x: 3, [y]: 3, n}; } catch(err) { }";
 
 size_t readmsg(char* data, size_t desired) {
   static size_t idx = 0;
@@ -11,7 +11,7 @@ size_t readmsg(char* data, size_t desired) {
     data[i++] = msg[idx++];
   }
 
-  if (!msg[idx] && cnt < 50000) {
+  if (!msg[idx] && cnt < 100) {
     ++cnt;
     idx = 0;
   }
@@ -27,7 +27,8 @@ size_t readstdin(char* data, size_t desired) {
 }
 
 int main(int argc, const char** argv) {
-  if (yrc_parse(readmsg)) {
+  yrc_error_t* error;
+  if (yrc_parse(readmsg, &error)) {
     printf("bad exit\n");
   }
   return 0;

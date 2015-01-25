@@ -47,4 +47,16 @@
   ALPHA_MAP(XX) \
   NUMERIC_MAP(XX)
 
+#define YRC_ERROR_BASE \
+  yrc_parse_error_type type;\
+  FPOS_T line;\
+  FPOS_T fpos;\
+  FPOS_T col
+
+struct yrc_error_s {
+  YRC_ERROR_BASE;
+};
+
+extern yrc_error_t yrc_error_mem;
+
 #endif

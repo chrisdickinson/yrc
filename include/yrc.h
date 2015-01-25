@@ -28,8 +28,27 @@ extern "C" {
 # define YRC_EXTERN /* nothing */
 #endif
 
+#ifndef FPOS_T
+#define FPOS_T uint64_t
+#endif
+
+typedef enum {
+  YRC_OK,
+  YRC_EUNEXPECTED,
+  YRC_ENOTALLOWED,
+  YRC_EBADTOKEN,
+  YRC_EMEM
+} yrc_parse_error_type;
+typedef struct yrc_error_s yrc_error_t;
+
 typedef size_t (*yrc_readcb)(char*, size_t);
-YRC_EXTERN int yrc_parse(yrc_readcb);
+typedef struct yrc_parser_s yrc_parser_t;
+
+YRC_EXTERN int yrc_parse(yrc_readcb, yrc_error_t**);
+YRC_EXTERN int yrc_error(yrc_error_t*, char*, size_t);
+YRC_EXTERN int yrc_error_token(yrc_error_t*, const char**);
+YRC_EXTERN int yrc_error_position(yrc_error_t*, FPOS_T*, FPOS_T*, FPOS_T*);
+
 #ifdef __cplusplus
 }
 #endif

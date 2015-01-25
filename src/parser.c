@@ -3,16 +3,9 @@
 #include "parser.h"
 #include "pool.h"
 
-typedef enum {
-  YRC_PARSE_OK,
-  E_YRC_PARSE_UNEXPECTED_TOKEN
-} yrc_parse_error_type;
-
+/* extends yrc_error_t */
 typedef struct yrc_parse_error_s {
-  yrc_parse_error_type type;
-  uint64_t line;
-  uint64_t fpos;
-  uint64_t col;
+  YRC_ERROR_BASE;
 
   yrc_token_t got;
   yrc_token_t expected;
@@ -30,7 +23,6 @@ struct yrc_parser_state_s {
   yrc_pool_t*           node_pool;
   uint_fast8_t          saw_newline;
   uint_fast8_t          asi;
-  yrc_parse_error_t     error;
 };
 
 #define CONSUME_CLEAN(state, CHECK, T, CLEANUP)\
@@ -41,7 +33,7 @@ struct yrc_parser_state_s {
 #define CONSUME(state, CHECK, T) CONSUME_CLEAN(state, CHECK, T, {});
 
 static int advance(yrc_parser_state_t*, enum yrc_scan_allow_regexp);
-static int expression(yrc_parser_state_t*, int, yrc_ast_node_t**);
+static int expression(yrc_parser_state_t*, uint_fast32_t, yrc_ast_node_t**);
 static int statement(yrc_parser_state_t*, yrc_ast_node_t**);
 static int statements(yrc_parser_state_t*, yrc_llist_t*);
 static int _ident(yrc_parser_state_t*, yrc_token_t*, yrc_ast_node_t**);
@@ -726,7 +718,7 @@ SYMBOLS(STATE)
   return 1;
 }
 
-static int expression(yrc_parser_state_t* parser, int rbp, yrc_ast_node_t** out) {
+static int expression(yrc_parser_state_t* parser, uint_fast32_t rbp, yrc_ast_node_t** out) {
   yrc_ast_node_t* left = NULL;
   yrc_parser_symbol_t* sym = parser->symbol;
   yrc_token_t* tok = parser->token;
@@ -814,7 +806,7 @@ static int statements(yrc_parser_state_t* parser, yrc_llist_t* out) {
 /* 16K chunks by default */
 #define CHUNK_SIZE 256
 
-YRC_EXTERN int yrc_parse(yrc_readcb read) {
+YRC_EXTERN int yrc_parse(yrc_readcb read, yrc_error_t** error_ptr) {
   yrc_llist_t* stmts;
   yrc_parser_state_t parser = {
     NULL,
@@ -823,15 +815,7 @@ YRC_EXTERN int yrc_parse(yrc_readcb read) {
     NULL,
     NULL,
     0,
-    0,
-    {
-      YRC_PARSE_OK,
-      0,
-      0,
-      0,
-      {YRC_TOKEN_EOF, {0, 0, 0}, {0, 0, 0}, {{0, 0, NULL}}},
-      {YRC_TOKEN_EOF, {0, 0, 0}, {0, 0, 0}, {{0, 0, NULL}}}
-    }
+    0
   };
   parser.readcb = read;
   if (yrc_tokenizer_init(&parser.tokenizer, CHUNK_SIZE)) {
