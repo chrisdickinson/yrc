@@ -1,6 +1,6 @@
 #include "yrc.h"
 #include <stdio.h>
-const char* msg = "try { abba = {get x: 3, [y]: 3, n}; } catch(err) { }";
+const char* msg = "try { var abba = {get x: 3, [y]: 3, n}; } catch(err) { }";
 
 size_t readmsg(char* data, size_t desired) {
   static size_t idx = 0;

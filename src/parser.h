@@ -28,6 +28,12 @@ typedef enum {
   YRC_PROP_SHORTHAND_METHOD=32
 } yrc_property_flags;
 
+typedef enum {
+  YRC_DECL_VAR=0,
+  YRC_DECL_CONST=1,
+  YRC_DECL_LET=2
+} yrc_var_type;
+
 #define AST_TYPE_MAP(XX) \
   XX(PROGRAM)\
   XX(STMT_BLOCK)\
@@ -42,7 +48,8 @@ typedef enum {
   XX(STMT_RETURN)\
   XX(STMT_THROW)\
   XX(STMT_TRY)\
-  XX(STMT_CATCH)\
+  XX(CLSE_CATCH)\
+  XX(CLSE_VAR)\
   XX(STMT_WHILE)\
   XX(STMT_DOWHILE)\
   XX(STMT_FOR)\
@@ -172,6 +179,16 @@ typedef struct yrc_ast_node_try_s {
   yrc_ast_node_t* finalizer;
 } yrc_ast_node_try_t;
 
+typedef struct yrc_ast_node_var_s {
+  yrc_llist_t* declarations;
+  yrc_var_type type;
+} yrc_ast_node_var_t;
+
+typedef struct yrc_ast_node_vardecl_s {
+  yrc_ast_node_t* id;
+  yrc_ast_node_t* init;
+} yrc_ast_node_vardecl_t;
+
 struct yrc_ast_node_s {
   yrc_ast_node_type kind;
   union {
@@ -196,6 +213,8 @@ struct yrc_ast_node_s {
     yrc_ast_node_try_t          as_try;
     yrc_ast_node_unary_t        as_unary;
     yrc_ast_node_update_t       as_update;
+    yrc_ast_node_var_t          as_var;
+    yrc_ast_node_vardecl_t      as_vardecl;
     yrc_ast_node_while_t        as_while;
     yrc_ast_node_do_while_t     as_do_while;
   } data;
