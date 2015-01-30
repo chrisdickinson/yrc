@@ -3,5 +3,20 @@
   "description": "you're real cool - a javascript parser written in c",
   "scripts": {
     "test": "cd out/Debug && ninja && ./run-tests ../../corpus/jquery.js"
-  }
+  },
+  "src": [
+    "include/yrc.h",
+    "include/stdint-msvc2008.h",
+    "src/accumulator.h",
+    "src/accumulator.c",
+    "src/llist.h",
+    "src/llist.c",
+    "src/parser.h",
+    "src/parser.c",
+    "src/pool.h",
+    "src/pool.c",
+    "src/tokenizer.h",
+    "src/tokenizer.c",
+    "src/yrc-common.h"
+  ]
 }
