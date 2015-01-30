@@ -22,15 +22,25 @@ size_t readmsg(char* data, size_t desired) {
 }
 
 size_t readstdin(char* data, size_t desired) {
+  static int cnt = 0;
   if (feof(inp)) {
-    return 0;
+    if (cnt++ < 10) {
+      fseek(inp, 0, SEEK_SET);
+    } else {
+      return 0;
+    }
   }
   return fread(data, 1, desired, inp);
 }
 
 int main(int argc, const char** argv) {
   yrc_error_t* error;
-  inp = fopen("../../jquery.js", "r");
+  if (argc < 2) {
+    printf("usage: run-tests [path-to-javascript]\n");
+    return 1;
+  }
+
+  inp = fopen(argv[1], "r");
   if (yrc_parse(readstdin, &error)) {
     printf("bad exit\n");
   }

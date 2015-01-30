@@ -1,0 +1,7 @@
+{
+  "name": "yrc",
+  "description": "you're real cool - a javascript parser written in c",
+  "scripts": {
+    "test": "cd out/Debug && ninja && ./run-tests ../../corpus/jquery.js"
+  }
+}
