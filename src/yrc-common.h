@@ -25,17 +25,18 @@
   XX('I') XX('J') XX('K') XX('L') XX('M') \
   XX('N') XX('O') XX('P') XX('Q') XX('R') \
   XX('S') XX('T') XX('U') XX('V') XX('W') \
-  XX('X') XX('Y') XX('Z')
+  XX('X') XX('Y') XX('Z') XX('$')
 
 #define NUMERIC_MAP(XX) \
   XX('0') XX('1') XX('2') XX('3') XX('4') \
   XX('5') XX('6') XX('7') XX('8') XX('9') 
 
+/* XXX: promote "." to OPERATOR_MAP (for "...") */
 #define FASTOP_MAP(XX) \
   XX('?') XX(':') XX(',') \
   XX('~') XX('{') XX('}') \
   XX('[') XX(']') XX(';') \
-  XX('(') XX(')')
+  XX('(') XX(')') XX('.')
 
 #define OPERATOR_MAP(XX) \
   XX('/') XX('*') XX('=') \

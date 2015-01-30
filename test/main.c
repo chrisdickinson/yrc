@@ -1,6 +1,8 @@
 #include "yrc.h"
 #include <stdio.h>
-const char* msg = "try { var abba = {get x: 3, [y]: 3, n}; } catch(err) { }";
+#include <string.h>
+const char* msg = "try { x++ * y; x--; var abba = {get x: 3, [y]: 3, n}; } catch(err) { }; function hey() {}";
+FILE* inp;
 
 size_t readmsg(char* data, size_t desired) {
   static size_t idx = 0;
@@ -20,16 +22,18 @@ size_t readmsg(char* data, size_t desired) {
 }
 
 size_t readstdin(char* data, size_t desired) {
-  if (feof(stdin)) {
+  if (feof(inp)) {
     return 0;
   }
-  return fread(data, 1, desired, stdin);
+  return fread(data, 1, desired, inp);
 }
 
 int main(int argc, const char** argv) {
   yrc_error_t* error;
-  if (yrc_parse(readmsg, &error)) {
+  inp = fopen("../../jquery.js", "r");
+  if (yrc_parse(readstdin, &error)) {
     printf("bad exit\n");
   }
+  fclose(inp);
   return 0;
 }

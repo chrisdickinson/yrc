@@ -43,6 +43,7 @@
   XX("in", IN)\
   XX("instanceof", INSTANCEOF)\
   XX("let", LET)\
+  XX("of", OF)\
   XX("new", NEW)\
   XX("return", RETURN)\
   XX("super", SUPER)\
@@ -224,8 +225,9 @@ typedef struct yrc_tokenizer_s yrc_tokenizer_t;
 
 enum yrc_scan_allow_regexp {
   YRC_ISNT_REGEXP=0,
-  YRC_IS_REGEXP,
-  YRC_IS_REGEXP_EQ
+  YRC_IS_REGEXP=1,
+  YRC_IS_REGEXP_EQ=2,
+  YRC_NEXT_ADVANCE_FLAG=4
 };
 
 void yrc_token_repr(yrc_token_t*);

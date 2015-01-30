@@ -212,8 +212,8 @@ int yrc_tokenizer_init(yrc_tokenizer_t** state, size_t chunksz) {
   }
 
   obj->fpos =
-  obj->line =
   obj->col = 0;
+  obj->line = 1;
 
   obj->offset =
   obj->start =
@@ -682,6 +682,12 @@ int is_alnum(char ch) {
   }))\
   XX(COMMENT_BLOCK, comment_block, STATE_EXPORT({\
     if (eof) return 1;\
+    if (data[offset] == '\n') {\
+      ++line;\
+      col = 0;\
+    } else {\
+      ++col;\
+    }\
     if (data[offset] == '/' && last == '*') {\
       state = YRC_TKS_DEFAULT;\
       ++offset;\
@@ -705,7 +711,11 @@ int is_alnum(char ch) {
         state = YRC_TKS_REGEXP_TAIL;\
         break;\
       }\
-      last = data[offset];\
+      if (data[offset] == '\\' && last == '\\') {\
+        last = '\0';\
+      } else {\
+        last = data[offset];\
+      }\
       ++offset;\
     }\
     diff = offset - start;\
@@ -880,7 +890,7 @@ export:
 }
 
 void yrc_token_repr(yrc_token_t* tk) {
-  printf("%llu:%llu %s ⊏ ", tk->start.line, tk->start.col, TOKEN_TYPES_MAP[tk->type]);
+  printf("%llu:%llu %s ⟪ ", tk->start.line, tk->start.col, TOKEN_TYPES_MAP[tk->type]);
   switch (tk->type) {
     case YRC_TOKEN_COMMENT:
       fwrite(tk->info.as_comment.data, tk->info.as_comment.size, 1, stdout);
@@ -923,7 +933,7 @@ void yrc_token_repr(yrc_token_t* tk) {
       }
     break;
   }
-  printf(" ⊐\n");
+  printf(" ⟫\n");
 }
 
 int yrc_tokenizer_promote_keyword(yrc_tokenizer_t* tokenizer, yrc_token_t* token) {
