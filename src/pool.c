@@ -5,7 +5,6 @@
 
 yrc_error_t yrc_error_mem;
 
-// TODO: make this portable:
 #define clz(xs) __builtin_clzll(xs)
 /**
 

@@ -919,7 +919,6 @@ static int _this(yrc_parser_state_t* state, yrc_token_t* orig, yrc_ast_node_t** 
   return 0;
 }
 
-//STATE("text", TOKEN_TYPE,         SUBTYPE,    LBP, NUD, LED, STD
 #define SYMBOLS(XX) \
   XX(stmtthis,       KEYWORD, as_keyword == YRC_KW_THIS,        0, _this,     NULL, NULL)\
   XX(stmtwhile,      KEYWORD, as_keyword == YRC_KW_WHILE,       0, NULL,      NULL, _while)\
