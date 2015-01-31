@@ -8,19 +8,19 @@ yrc_error_t yrc_error_mem;
 #ifdef WIN32
 #include <intrin.h>
 static uint32_t __inline __builtin_clz(uint32_t x) {
-	unsigned long r = 0;
-	_BitScanReverse(&r, x);
-	return (31 - r);
+  unsigned long r = 0;
+  _BitScanReverse(&r, x);
+  return (31 - r);
 }
 uint32_t clz(const uint64_t x)
 {
-	uint32_t u32 = (x >> 32);
-	uint32_t result = u32 ? __builtin_clz(u32) : 32;
-	if (result == 32) {
-		u32 = x & 0xFFFFFFFFUL;
-		result += (u32 ? __builtin_clz(u32) : 32);
-	}
-	return result;
+  uint32_t u32 = (x >> 32);
+  uint32_t result = u32 ? __builtin_clz(u32) : 32;
+  if (result == 32) {
+    u32 = x & 0xFFFFFFFFUL;
+    result += (u32 ? __builtin_clz(u32) : 32);
+  }
+  return result;
 }
 #else
 #define clz(xs) __builtin_clzll(xs)

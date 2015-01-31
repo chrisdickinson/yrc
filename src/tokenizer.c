@@ -941,7 +941,7 @@ int yrc_tokenizer_promote_keyword(yrc_tokenizer_t* tokenizer, yrc_token_t* token
   size_t size = strlen(target);
   char* data = malloc(size);
   if (data == NULL) {
-	return 1;
+    return 1;
   }
   memcpy(data, target, size);
   token->type = YRC_TOKEN_IDENT;
