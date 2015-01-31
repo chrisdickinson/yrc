@@ -5,7 +5,26 @@
 
 yrc_error_t yrc_error_mem;
 
+#ifdef WIN32
+#include <intrin.h>
+static uint32_t __inline __builtin_clz(uint32_t x) {
+	unsigned long r = 0;
+	_BitScanReverse(&r, x);
+	return (31 - r);
+}
+uint32_t clz(const uint64_t x)
+{
+	uint32_t u32 = (x >> 32);
+	uint32_t result = u32 ? __builtin_clz(u32) : 32;
+	if (result == 32) {
+		u32 = x & 0xFFFFFFFFUL;
+		result += (u32 ? __builtin_clz(u32) : 32);
+	}
+	return result;
+}
+#else
 #define clz(xs) __builtin_clzll(xs)
+#endif /* WIN32 */
 /**
 
 arenaptr
@@ -54,7 +73,7 @@ arenaptr
 
 typedef struct yrc_pool_arena_s {
   struct yrc_pool_arena_s* next;
-  size_t used_mask[MASK_SIZE];
+  uint64_t used_mask[MASK_SIZE];
   uint_fast32_t free;
   char data[1];
 } yrc_pool_arena_t;

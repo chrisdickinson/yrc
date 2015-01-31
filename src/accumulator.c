@@ -31,7 +31,7 @@ static int _check_resize(yrc_accum_t* accum, size_t desired) {
     return 0;
   }
 
-  new_size = _npot(accum->size);
+  new_size = _npot(accum->offs + desired);
   new_head = realloc(accum->head, new_size);
   if (new_head == NULL) {
     return 1;

@@ -765,7 +765,7 @@ static int _catch(yrc_parser_state_t* state, yrc_ast_node_t** out) {
 }
 
 
-static int _try(yrc_parser_state_t* state, yrc_ast_node_t** out) {
+static int _trystmt(yrc_parser_state_t* state, yrc_ast_node_t** out) {
   yrc_ast_node_t* node = yrc_pool_attain(state->node_pool);
   *out = node;
   if (node == NULL) return 1;
@@ -929,7 +929,7 @@ static int _this(yrc_parser_state_t* state, yrc_token_t* orig, yrc_ast_node_t** 
   XX(stmtbreak,      KEYWORD, as_keyword == YRC_KW_BREAK,       0, NULL,      NULL, _break)\
   XX(stmtcontinue,   KEYWORD, as_keyword == YRC_KW_CONTINUE,    0, NULL,      NULL, _continue)\
   XX(stmtreturn,     KEYWORD, as_keyword == YRC_KW_RETURN,      0, NULL,      NULL, _return)\
-  XX(stmttry,        KEYWORD, as_keyword == YRC_KW_TRY,         0, NULL,      NULL, _try)\
+  XX(stmttry,        KEYWORD, as_keyword == YRC_KW_TRY,         0, NULL,      NULL, _trystmt)\
   XX(stmtvar,        KEYWORD, as_keyword == YRC_KW_VAR,         0, NULL,      NULL, _var)\
   XX(stmtlet,        KEYWORD, as_keyword == YRC_KW_LET,         0, NULL,      NULL, _let)\
   XX(stmtconst,      KEYWORD, as_keyword == YRC_KW_CONST,       0, NULL,      NULL, _const)\

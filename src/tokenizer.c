@@ -827,7 +827,7 @@ int yrc_tokenizer_scan(
   size_t offset, start, diff, size, tokensize;
   yrc_accum_t *primary, *secondary;
   yrc_op_t *op_current, *op_last;
-  char *tokendata, *data, last;
+  char *tokendata, *data, last = '\0';
   yrc_token_keyword_t kw;
   char should_break = 0;
   yrc_token_t* tk;
@@ -940,7 +940,9 @@ int yrc_tokenizer_promote_keyword(yrc_tokenizer_t* tokenizer, yrc_token_t* token
   const char* target = TOKEN_OPERATOR_MAP[token->info.as_keyword];
   size_t size = strlen(target);
   char* data = malloc(size);
-
+  if (data == NULL) {
+	return 1;
+  }
   memcpy(data, target, size);
   token->type = YRC_TOKEN_IDENT;
   token->info.as_ident.size = size;
