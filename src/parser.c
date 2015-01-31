@@ -303,10 +303,8 @@ static int _if(yrc_parser_state_t* state, yrc_ast_node_t** out) {
 
 #define INFIX(NAME, TYPE, RBP_MOD, KIND, EXTRA) \
 static int NAME(yrc_parser_state_t* state, yrc_ast_node_t* left, yrc_ast_node_t** out) { \
-  yrc_parser_symbol_t* sym = state->symbol;\
   yrc_token_t* token = state->last;\
   yrc_ast_node_t* node = yrc_pool_attain(state->node_pool);\
-  sym;token;\
   if (node == NULL) {\
     return 1;\
   }\
@@ -322,10 +320,8 @@ static int NAME(yrc_parser_state_t* state, yrc_ast_node_t* left, yrc_ast_node_t*
 
 #define PREFIX(NAME, TYPE, BP, KIND, EXTRA)\
 static int NAME(yrc_parser_state_t* state, yrc_token_t* orig, yrc_ast_node_t** out) { \
-  yrc_parser_symbol_t* sym = state->symbol;\
   yrc_token_t* token = state->token;\
   yrc_ast_node_t* node = yrc_pool_attain(state->node_pool);\
-  sym;token;\
   if (node == NULL) {\
     return 1;\
   }\
