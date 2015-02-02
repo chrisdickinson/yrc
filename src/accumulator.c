@@ -89,6 +89,9 @@ int yrc_accum_export(yrc_accum_t* accum, char** strptr, size_t* sizeptr) {
   if (accum->head == NULL) {
     return 1;
   }
+#ifdef DEBUG
+  memset(accum->head, 0, accum->init);
+#endif
   accum->size = accum->init;
   accum->offs = 0;
   return 0;

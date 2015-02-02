@@ -1195,7 +1195,7 @@ static int statements(yrc_parser_state_t* parser, yrc_llist_t* out) {
 }
 
 /* 16K chunks by default */
-#define CHUNK_SIZE 256
+#define CHUNK_SIZE 16384
 
 YRC_EXTERN int yrc_parse(yrc_readcb read, yrc_error_t** error_ptr) {
   yrc_llist_t* stmts;

@@ -5,6 +5,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <stdio.h>
+#include <assert.h>
 
 /* extends yrc_error_t */
 typedef struct yrc_tokenizer_error_s {
@@ -356,6 +357,7 @@ int is_alnum(char ch) {
   if (yrc_accum_##POSTCASE(TARGET, &tokendata, &tokensize)) {\
     return 1;\
   }\
+  assert(tokendata != NULL);\
   tk = yrc_pool_attain(tokenizer->token_pool);\
   if (tk == NULL) {\
     return 1;\
