@@ -4,6 +4,17 @@
 #include "pool.h"
 #include <stdio.h>
 
+typedef int (*yrc_parser_led_t)(yrc_parser_state_t*, yrc_ast_node_t*, yrc_ast_node_t**);
+typedef int (*yrc_parser_nud_t)(yrc_parser_state_t*, yrc_token_t*, yrc_ast_node_t**);
+typedef int (*yrc_parser_std_t)(yrc_parser_state_t*, yrc_ast_node_t**);
+
+typedef struct yrc_parser_symbol_s {
+  yrc_parser_nud_t        nud;
+  yrc_parser_led_t        led;
+  yrc_parser_std_t        std;
+  uint_fast32_t           lbp;
+} yrc_parser_symbol_t;
+
 enum {
   SPECIAL_IN=YRC_NEXT_ADVANCE_FLAG,
   CONSUME_SEMICOLON=YRC_NEXT_ADVANCE_FLAG<<1
@@ -17,10 +28,15 @@ typedef struct yrc_parse_error_s {
   yrc_token_t expected;
 } yrc_parse_error_t;
 
+int nop(char* relationship, yrc_ast_node_type type, void* ctx) {
+  return 0;
+}
+
+
 #define MAX(a, b) ((a) > (b) ? (a) : (b))
 #define IS_EOF(K) (K == &eof)
 #define IS_OP(K, T) (K->type == YRC_TOKEN_OPERATOR && K->info.as_operator == YRC_OP_##T)
-#define IS_KW(K, T) (K->type == YRC_TOKEN_KEYWORD && K->info.as_operator == YRC_KW_##T)
+#define IS_KW(K, T) (K->type == YRC_TOKEN_KEYWORD && K->info.as_keyword == YRC_KW_##T)
 struct yrc_parser_state_s {
   yrc_tokenizer_t*      tokenizer;
   yrc_token_t*          last;
@@ -59,6 +75,7 @@ static int _block(yrc_parser_state_t* state, yrc_ast_node_t** out) {
   if (yrc_llist_init(&node->data.as_block.body)) {
     return 1;
   }
+  
   if (statements(state, node->data.as_block.body)) {
     yrc_llist_free(node->data.as_block.body);
     return 1;
@@ -67,6 +84,7 @@ static int _block(yrc_parser_state_t* state, yrc_ast_node_t** out) {
     yrc_llist_free(node->data.as_block.body);
   });
   *out = (yrc_ast_node_t*)node;
+  
   return 0;
 }
 
@@ -77,10 +95,13 @@ static int _break(yrc_parser_state_t* state, yrc_ast_node_t** out) {
     return 1;
   }
   node->kind = YRC_AST_STMT_BREAK;
+  
+  /* XXX: need to advance if there is a label */
   node->data.as_break.label = (state->token->type == YRC_TOKEN_IDENT) ?
     node->data.as_break.label = state->token :
     NULL;
   *out = (yrc_ast_node_t*)node;
+  
   return 0;
 }
 
@@ -91,14 +112,16 @@ static int _throw(yrc_parser_state_t* state, yrc_ast_node_t** out) {
     return 1;
   }
   node->kind = YRC_AST_STMT_THROW;
+  
   if (commaexpression(state, 0, &node->data.as_throw.argument, 0)) {
     return 1;
   }
+  
   return 0;
 }
 
 
-static int _do_regexp(yrc_parser_state_t* state, yrc_ast_node_t** out, enum yrc_scan_allow_regexp kind) {
+static int _do_regexp(yrc_parser_state_t* state, yrc_ast_node_t** out, yrc_scan_allow_regexp kind) {
   yrc_ast_node_t* node = yrc_pool_attain(state->node_pool);
   if (node == NULL) {
     return 1;
@@ -106,9 +129,11 @@ static int _do_regexp(yrc_parser_state_t* state, yrc_ast_node_t** out, enum yrc_
   *out = (yrc_ast_node_t*)node;
   node->kind = YRC_AST_EXPR_LITERAL;
   node->data.as_literal.value = state->token;
+  
   if (advance(state, YRC_ISNT_REGEXP)) {
     return 1;
   }
+  
   return 0;
 }
 
@@ -695,7 +720,7 @@ static int _return(yrc_parser_state_t* state, yrc_ast_node_t** out) {
 }
 
 
-static int _suffix(yrc_parser_state_t* state, yrc_ast_node_t* left, yrc_ast_node_t** out, yrc_token_operator_t op) {
+static int _suffix(yrc_parser_state_t* state, yrc_ast_node_t* left, yrc_ast_node_t** out, yrc_operator_t op) {
   yrc_ast_node_t* node = yrc_pool_attain(state->node_pool);
   if (node == NULL) {
     return 1;
@@ -1064,7 +1089,7 @@ static int expression(yrc_parser_state_t* parser, uint_fast32_t rbp, yrc_ast_nod
   yrc_ast_node_t* left = NULL;
   yrc_parser_symbol_t* sym = parser->symbol;
   yrc_token_t* tok = parser->token;
-  enum yrc_scan_allow_regexp type = YRC_ISNT_REGEXP;
+  yrc_scan_allow_regexp type = YRC_ISNT_REGEXP;
 
   if (IS_OP(tok, DIV)) {
     type = YRC_IS_REGEXP;
@@ -1094,22 +1119,7 @@ static int expression(yrc_parser_state_t* parser, uint_fast32_t rbp, yrc_ast_nod
     }
   }
 
-  if (0 && IS_OP(parser->token, COMMA) && parser->allow_comma) {
-    yrc_ast_node_t* seq = NULL;
-    seq = yrc_pool_attain(parser->node_pool);
-    if (seq == NULL) {
-      return 1;
-    }
-    seq->kind = YRC_AST_EXPR_SEQUENCE;
-    seq->data.as_sequence.left = left;
-    *out = seq;
-    if (advance(parser, YRC_ISNT_REGEXP)) {
-      return 1;
-    }
-    return expression(parser, 0, &seq->data.as_sequence.right, 0);
-  } else {
-    *out = left;
-  }
+  *out = left;
   return 0;
 }
 
@@ -1194,10 +1204,7 @@ static int statements(yrc_parser_state_t* parser, yrc_llist_t* out) {
   return 0;
 }
 
-/* 16K chunks by default */
-#define CHUNK_SIZE 16384
-
-YRC_EXTERN int yrc_parse(yrc_readcb read, yrc_error_t** error_ptr) {
+YRC_EXTERN int yrc_parse(yrc_parse_request_t* req) {
   yrc_llist_t* stmts;
   yrc_parser_state_t parser = {
     NULL,
@@ -1210,9 +1217,9 @@ YRC_EXTERN int yrc_parse(yrc_readcb read, yrc_error_t** error_ptr) {
     1,
     NULL
   };
-  parser.readcb = read;
-  parser.errorptr = error_ptr;
-  if (yrc_tokenizer_init(&parser.tokenizer, CHUNK_SIZE)) {
+  parser.readcb = req->read;
+  parser.errorptr = req->errorptr;
+  if (yrc_tokenizer_init(&parser.tokenizer, req->readsize, req->readctx)) {
     return 1;
   }
 

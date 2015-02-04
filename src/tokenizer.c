@@ -37,6 +37,8 @@ struct yrc_tokenizer_s {
   size_t chunksz;
   yrc_accum_t* primary;
   yrc_accum_t* secondary;
+
+  void* readctx;
 };
 
 const char* TOKEN_TYPES_MAP[] = {
@@ -130,7 +132,7 @@ yrc_op_t* OPERATORS[] = {
   &GT_GTGT_EQ_NUL,
 };
 
-yrc_token_operator_t _string_to_operator(char* data, size_t size) {
+yrc_operator_t _string_to_operator(char* data, size_t size) {
   size_t i;
   size_t j;
 
@@ -149,7 +151,7 @@ yrc_token_operator_t _string_to_operator(char* data, size_t size) {
 }
 
 
-yrc_token_keyword_t _string_to_keyword(char* data, size_t size) {
+yrc_keyword_t _string_to_keyword(char* data, size_t size) {
   size_t i;
   size_t j;
 
@@ -168,7 +170,7 @@ yrc_token_keyword_t _string_to_keyword(char* data, size_t size) {
 }
 
 
-int yrc_tokenizer_init(yrc_tokenizer_t** state, size_t chunksz) {
+int yrc_tokenizer_init(yrc_tokenizer_t** state, size_t chunksz, void* ctx) {
   yrc_tokenizer_t* obj = malloc(sizeof(*obj));
   if (obj == NULL) {
     return 1;
@@ -177,6 +179,7 @@ int yrc_tokenizer_init(yrc_tokenizer_t** state, size_t chunksz) {
   obj->eof = 0;
   obj->chunksz = chunksz;
   obj->data = malloc(chunksz);
+  obj->readctx = ctx;
   if (obj->data == NULL) {
     free(obj);
     return 1;
@@ -239,6 +242,8 @@ int _free_tokens(void* raw, size_t idx, void* ctx, int* stop) {
     case YRC_TOKEN_WHITESPACE:
       free(token->info.as_whitespace.data);
       break;
+    default:
+      break;
   }
   return 0;
 }
@@ -246,7 +251,7 @@ int _free_tokens(void* raw, size_t idx, void* ctx, int* stop) {
 
 int yrc_tokenizer_free(yrc_tokenizer_t* state) {
   free(state->data);
-  yrc_llist_iter(state->tokens, _free_tokens, NULL);
+  yrc_llist_foreach(state->tokens, _free_tokens, NULL);
   yrc_llist_free(state->tokens);
   yrc_pool_free(state->token_pool);
   yrc_accum_free(state->secondary);
@@ -823,14 +828,14 @@ int yrc_tokenizer_scan(
     yrc_tokenizer_t* tokenizer, 
     yrc_readcb read, 
     yrc_token_t** out, 
-    enum yrc_scan_allow_regexp regexp_mode) {
+    yrc_scan_allow_regexp regexp_mode) {
   FPOS_T last_fpos, last_line, last_col, fpos, line, col;
   yrc_tokenizer_state state = YRC_TKS_DEFAULT;
   size_t offset, start, diff, size, tokensize;
   yrc_accum_t *primary, *secondary;
   yrc_op_t *op_current, *op_last;
   char *tokendata, *data, last = '\0';
-  yrc_token_keyword_t kw;
+  yrc_keyword_t kw;
   char should_break = 0;
   yrc_token_t* tk;
   uint_fast8_t eof;
@@ -852,7 +857,7 @@ int yrc_tokenizer_scan(
   }
   while (!eof) {
     if (offset == size) {
-      size = read(tokenizer->data, tokenizer->chunksz);
+      size = read(tokenizer->data, tokenizer->chunksz, tokenizer->readctx);
       offset = 0;
     }
 

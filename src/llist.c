@@ -177,7 +177,7 @@ int yrc_llist_unshift(yrc_llist_t* list, void* item) {
 }
 
 
-int yrc_llist_iter(yrc_llist_t* list, yrc_llist_iter_cb_t cb, void* ctx) {
+int yrc_llist_foreach(yrc_llist_t* list, yrc_llist_iter_cb_t cb, void* ctx) {
   yrc_llist_node_t* current;
   size_t idx;
   int stop;
@@ -271,7 +271,7 @@ int yrc_llist_map(yrc_llist_t* from, yrc_llist_t* into, yrc_llist_map_cb_t cb, v
   outer_ctx.inner_cb = cb;
   outer_ctx.into = into;
   outer_ctx.inner_ctx = ctx;
-  if (yrc_llist_iter(from, _llist_map_cb, &outer_ctx)) {
+  if (yrc_llist_foreach(from, _llist_map_cb, &outer_ctx)) {
     return 1;
   }
   return 0;
@@ -283,7 +283,7 @@ int yrc_llist_filter(yrc_llist_t* from, yrc_llist_t* into, yrc_llist_filter_cb_t
   outer_ctx.inner_cb = cb;
   outer_ctx.into = into;
   outer_ctx.inner_ctx = ctx;
-  if (yrc_llist_iter(from, _llist_filter_cb, &outer_ctx)) {
+  if (yrc_llist_foreach(from, _llist_filter_cb, &outer_ctx)) {
     return 1;
   }
   return 0;
@@ -295,7 +295,7 @@ int yrc_llist_reduce(yrc_llist_t* from, void** into, yrc_llist_reduce_cb_t cb, v
   outer_ctx.inner_cb = cb;
   outer_ctx.inner_ctx = ctx;
   outer_ctx.last = init;
-  if (yrc_llist_iter(from, _llist_reduce_cb, &outer_ctx)) {
+  if (yrc_llist_foreach(from, _llist_reduce_cb, &outer_ctx)) {
     return 1;
   }
   *into = outer_ctx.last;
@@ -308,7 +308,7 @@ int _yrc_llist_anyall(yrc_llist_t* from, int* result, yrc_llist_filter_cb_t cb, 
   outer_ctx.inner_cb = cb;
   outer_ctx.inner_ctx = ctx;
   outer_ctx.mode = mode;
-  if (yrc_llist_iter(from, _llist_anyall_cb, &outer_ctx)) {
+  if (yrc_llist_foreach(from, _llist_anyall_cb, &outer_ctx)) {
     return 1;
   }
   *result = outer_ctx.mode == outer_ctx.output;
