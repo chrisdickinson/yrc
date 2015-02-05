@@ -66,7 +66,8 @@
         'src/llist.c',
         'src/tokenizer.c',
         'src/parser.c',
-        'src/pool.c'
+        'src/pool.c',
+        'src/traverse.c',
       ]
     },
 
