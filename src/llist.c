@@ -324,3 +324,17 @@ int yrc_llist_any(yrc_llist_t* from, int* result, yrc_llist_filter_cb_t cb, void
 int yrc_llist_all(yrc_llist_t* from, int* result, yrc_llist_filter_cb_t cb, void* ctx) {
   return _yrc_llist_anyall(from, result, cb, ctx, 1);
 }
+
+yrc_llist_iter_t yrc_llist_iter_start(yrc_llist_t* list) {
+  return *(yrc_llist_iter_t*)&list->head;
+}
+
+void* yrc_llist_iter_next(yrc_llist_iter_t* iter) {
+  yrc_llist_node_t* node = iter->ptr;
+  if (node == NULL) {
+    return NULL;
+  }
+  void* cur = node->item;
+  iter->ptr = node->next;
+  return cur;
+}

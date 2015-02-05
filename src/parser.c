@@ -2,7 +2,9 @@
 #include "llist.h"
 #include "parser.h"
 #include "pool.h"
+#include "traverse.h"
 #include <stdio.h>
+#include <stdlib.h>
 
 typedef int (*yrc_parser_led_t)(yrc_parser_state_t*, yrc_ast_node_t*, yrc_ast_node_t**);
 typedef int (*yrc_parser_nud_t)(yrc_parser_state_t*, yrc_token_t*, yrc_ast_node_t**);
@@ -48,6 +50,12 @@ struct yrc_parser_state_s {
   uint_fast8_t          allow_comma;
   yrc_error_t**         errorptr;
 };
+
+typedef struct yrc_parse_response_priv_s {
+  yrc_parse_response_t  response;
+  yrc_tokenizer_t*      tokenizer;
+  yrc_pool_t*           node_pool;
+} yrc_parse_response_priv_t;
 
 #define CONSUME_CLEAN(state, CHECK, T, CLEANUP)\
   do {\
@@ -116,6 +124,7 @@ static int _throw(yrc_parser_state_t* state, yrc_ast_node_t** out) {
   if (commaexpression(state, 0, &node->data.as_throw.argument, 0)) {
     return 1;
   }
+  *out = node;
   
   return 0;
 }
@@ -415,6 +424,7 @@ static int _prefix_array(yrc_parser_state_t* state, yrc_token_t* orig, yrc_ast_n
   if (yrc_llist_init(&node->data.as_array.elements)) {
     return 1;
   }
+  node->kind = YRC_AST_EXPR_ARRAY;
   do {
     if (IS_OP(state->token, RBRACK)) {
       break;
@@ -763,6 +773,9 @@ static int _catch(yrc_parser_state_t* state, yrc_ast_node_t** out) {
   yrc_ast_node_t* node = yrc_pool_attain(state->node_pool);
   *out = node;
   if (node == NULL) return 1;
+  node->data.as_try.finalizer = NULL;
+  node->data.as_try.handler = NULL;
+
   node->kind = YRC_AST_CLSE_CATCH;
   CONSUME(state, IS_OP, LPAREN);
   if (expression(state, 0, &node->data.as_catch.param, 0)) {
@@ -875,17 +888,17 @@ cleanup:
 
 
 static int _var(yrc_parser_state_t* state, yrc_ast_node_t** out) {
-  return _decl(state, out, YRC_DECL_VAR);
+  return _decl(state, out, YRC_VARTYPE_VAR);
 }
 
 
 static int _const(yrc_parser_state_t* state, yrc_ast_node_t** out) {
-  return _decl(state, out, YRC_DECL_CONST);
+  return _decl(state, out, YRC_VARTYPE_CONST);
 }
 
 
 static int _let(yrc_parser_state_t* state, yrc_ast_node_t** out) {
-  return _decl(state, out, YRC_DECL_LET);
+  return _decl(state, out, YRC_VARTYPE_LET);
 }
 
 
@@ -1153,9 +1166,13 @@ static int statement(yrc_parser_state_t* parser, yrc_ast_node_t** out, uint_fast
     if (advance(parser, YRC_ISNT_REGEXP)) {
       return 1;
     }
-    return sym->std(parser, out);
+    if (sym->std(parser, out)) {
+      return 1;
+    }
+    return 0;
   }
   node = yrc_pool_attain(parser->node_pool);
+  *out = node;
   if (node == NULL) {
     return 1;
   }
@@ -1204,7 +1221,7 @@ static int statements(yrc_parser_state_t* parser, yrc_llist_t* out) {
   return 0;
 }
 
-YRC_EXTERN int yrc_parse(yrc_parse_request_t* req) {
+YRC_EXTERN int yrc_parse(yrc_parse_request_t* req, yrc_parse_response_t** out) {
   yrc_llist_t* stmts;
   yrc_parser_state_t parser = {
     NULL,
@@ -1217,8 +1234,12 @@ YRC_EXTERN int yrc_parse(yrc_parse_request_t* req) {
     1,
     NULL
   };
+  yrc_parse_response_priv_t* resp;
+  resp = malloc(sizeof(*resp));
+  resp->response.error = NULL;
+  resp->response.root = NULL;
+  parser.errorptr = &resp->response.error;
   parser.readcb = req->read;
-  parser.errorptr = req->errorptr;
   if (yrc_tokenizer_init(&parser.tokenizer, req->readsize, req->readctx)) {
     return 1;
   }
@@ -1227,6 +1248,8 @@ YRC_EXTERN int yrc_parse(yrc_parse_request_t* req) {
     yrc_tokenizer_free(parser.tokenizer);
     return 1;
   }
+  resp->tokenizer = parser.tokenizer;
+  resp->node_pool = parser.node_pool;
 
   if (advance(&parser, YRC_ISNT_REGEXP)) {
     yrc_tokenizer_free(parser.tokenizer);
@@ -1247,5 +1270,62 @@ YRC_EXTERN int yrc_parse(yrc_parse_request_t* req) {
     return 1;
   }
 
+  resp->response.root = yrc_pool_attain(parser.node_pool);
+  if (resp->response.root == NULL) {
+    yrc_llist_free(stmts);
+    yrc_tokenizer_free(parser.tokenizer);
+    yrc_pool_free(parser.node_pool);
+    return 1;
+  }
+
+  resp->response.root->kind = YRC_AST_PROGRAM;
+  resp->response.root->data.as_program.body = stmts;
+  *out = (yrc_parse_response_t*)resp;
   return 0;
+}
+
+static yrc_visitor_mode free_node(yrc_ast_node_t* node, yrc_rel rel, yrc_ast_node_t* parent, void* ctx);
+YRC_EXTERN int yrc_parse_free(yrc_parse_response_t* resp_) {
+  yrc_parse_response_priv_t* resp;
+  yrc_visitor_t visitor;
+  visitor.exit = free_node;
+  visitor.enter = NULL;
+  resp = (yrc_parse_response_priv_t*)resp_;
+
+  yrc_traverse(resp->response.root, &visitor);
+  yrc_tokenizer_free(resp->tokenizer);
+  yrc_pool_free(resp->node_pool);
+  free(resp_);
+  return 0;
+}
+
+static yrc_visitor_mode free_node(yrc_ast_node_t* node, yrc_rel rel, yrc_ast_node_t* parent, void* ctx) {
+  switch (node->kind) {
+    default: return kYrcTraverseContinue;
+    case YRC_AST_EXPR_FUNCTION:
+    case YRC_AST_DECL_FUNCTION:
+      yrc_llist_free(node->data.as_function.params);
+      yrc_llist_free(node->data.as_function.defaults);
+    break;
+    case YRC_AST_DECL_VAR:
+      yrc_llist_free(node->data.as_var.declarations);
+    break;
+    case YRC_AST_PROGRAM:
+    case YRC_AST_STMT_BLOCK:
+      yrc_llist_free(node->data.as_block.body);
+    break;
+    case YRC_AST_EXPR_OBJECT:
+      if (node->data.as_object.properties)
+      yrc_llist_free(node->data.as_object.properties);
+    break;
+    case YRC_AST_EXPR_ARRAY:
+      if (node->data.as_array.elements)
+      yrc_llist_free(node->data.as_array.elements);
+    break;
+    case YRC_AST_EXPR_CALL:
+      if (node->data.as_call.arguments)
+      yrc_llist_free(node->data.as_call.arguments);
+    break;
+  }
+  return kYrcTraverseContinue;
 }
