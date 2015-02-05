@@ -327,6 +327,7 @@ typedef enum {
 } yrc_ast_node_type;
 
 typedef enum {
+  REL_NONE,
   REL_ALTERNATE,
   REL_ARGUMENT,
   REL_ARGUMENTS,
@@ -370,9 +371,9 @@ typedef enum {
 } yrc_property_flags;
 
 typedef enum {
-  YRC_DECL_VAR=0,
-  YRC_DECL_CONST=1,
-  YRC_DECL_LET=2
+  YRC_VARTYPE_VAR=0,
+  YRC_VARTYPE_CONST=1,
+  YRC_VARTYPE_LET=2
 } yrc_var_type;
 
 typedef struct yrc_ast_node_return_s {
@@ -487,14 +488,12 @@ typedef struct yrc_ast_node_sequence_s {
   yrc_ast_node_t* right;
 } yrc_ast_node_sequence_t;
 
-
 typedef struct yrc_ast_node_function_s {
   yrc_token_t* id;
   yrc_llist_t* params;
   yrc_llist_t* defaults;
   yrc_ast_node_t* body;
 } yrc_ast_node_function_t;
-
 
 typedef struct yrc_ast_node_for_s {
   yrc_ast_node_t* init;
@@ -503,13 +502,11 @@ typedef struct yrc_ast_node_for_s {
   yrc_ast_node_t* body;
 } yrc_ast_node_for_t;
 
-
 typedef struct yrc_ast_node_for_in_s {
   yrc_ast_node_t* left;
   yrc_ast_node_t* right;
   yrc_ast_node_t* body;
 } yrc_ast_node_for_in_t;
-
 
 typedef yrc_ast_node_for_in_t yrc_ast_node_for_of_t;
 
@@ -554,15 +551,18 @@ struct yrc_ast_node_s {
 
 typedef size_t (*yrc_readcb)(char*, size_t, void*);
 typedef struct yrc_parse_request_s {
-  yrc_readcb    read;
-  size_t        readsize;
-  void*         readctx;
-
-  void**        astptr;
-  yrc_error_t** errorptr;
+  yrc_readcb      read;
+  size_t          readsize;
+  void*           readctx;
 } yrc_parse_request_t;
 
-YRC_EXTERN int yrc_parse(yrc_parse_request_t*);
+typedef struct yrc_parse_response_s {
+  yrc_ast_node_t* root;
+  yrc_error_t*    error;
+} yrc_parse_response_t;
+
+YRC_EXTERN int yrc_parse(yrc_parse_request_t*, yrc_parse_response_t**);
+YRC_EXTERN int yrc_parse_free(yrc_parse_response_t*);
 YRC_EXTERN int yrc_error(yrc_error_t*, char*, size_t);
 YRC_EXTERN int yrc_error_token(yrc_error_t*, const char**);
 YRC_EXTERN int yrc_error_position(yrc_error_t*, FPOS_T*, FPOS_T*, FPOS_T*);

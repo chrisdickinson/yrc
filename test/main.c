@@ -34,7 +34,6 @@ size_t readstdin(char* data, size_t desired, void* ctx) {
 }
 
 int main(int argc, const char** argv) {
-  yrc_error_t* error;
   FILE* inp = NULL;
   if (argc < 2) {
     printf("usage: run-tests [path-to-javascript]\n");
@@ -45,12 +44,13 @@ int main(int argc, const char** argv) {
   yrc_parse_request_t req = {
     .read=readstdin,
     .readsize=16384,
-    .readctx=inp,
-    .astptr=NULL,
-    .errorptr=&error
+    .readctx=inp
   };
-  if (yrc_parse(&req)) {
+  yrc_parse_response_t* resp;
+  if (yrc_parse(&req, &resp)) {
     printf("bad exit\n");
+  } else {
+    yrc_parse_free(resp);
   }
   fclose(inp);
   return 0;
