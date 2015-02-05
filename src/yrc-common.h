@@ -2,6 +2,7 @@
 #define _YRC_COMMON_H
 
 #include <stddef.h>
+#include <stdlib.h>
 #if defined(_MSC_VER) && _MSC_VER < 1600
 # include "stdint-msvc2008.h"
 #else
@@ -60,4 +61,5 @@ struct yrc_error_s {
 
 extern yrc_error_t yrc_error_mem;
 
+#define UNREACHABLE() do { abort(); } while (0)
 #endif
