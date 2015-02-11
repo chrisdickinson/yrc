@@ -6,7 +6,7 @@
 
 typedef int (*yrc_parser_led_t)(yrc_parser_state_t*, yrc_ast_node_t*, yrc_ast_node_t**);
 typedef int (*yrc_parser_nud_t)(yrc_parser_state_t*, yrc_token_t*, yrc_ast_node_t**);
-typedef int (*yrc_parser_std_t)(yrc_parser_state_t*, yrc_ast_node_t**);
+typedef int (*yrc_parser_std_t)(yrc_parser_state_t*, yrc_ast_node_t**, uint_fast8_t);
 
 typedef struct yrc_parser_symbol_s {
   yrc_parser_nud_t        nud;
@@ -95,14 +95,15 @@ static int _block(yrc_parser_state_t* state, yrc_ast_node_t** out) {
 }
 
 
-static int _break(yrc_parser_state_t* state, yrc_ast_node_t** out) {
+static int _break(yrc_parser_state_t* state, yrc_ast_node_t** out, uint_fast8_t flags) {
   yrc_ast_node_t* node = yrc_pool_attain(state->node_pool);
   if (node == NULL) {
     return 1;
   }
   node->kind = YRC_AST_STMT_BREAK;
-  
+
   /* XXX: need to advance if there is a label */
+  /* XXX: ASI */
   node->data.as_break.label = (state->token->type == YRC_TOKEN_IDENT) ?
     node->data.as_break.label = state->token :
     NULL;
@@ -112,13 +113,14 @@ static int _break(yrc_parser_state_t* state, yrc_ast_node_t** out) {
 }
 
 
-static int _throw(yrc_parser_state_t* state, yrc_ast_node_t** out) {
+static int _throw(yrc_parser_state_t* state, yrc_ast_node_t** out, uint_fast8_t flags) {
   yrc_ast_node_t* node = yrc_pool_attain(state->node_pool);
   if (node == NULL) {
     return 1;
   }
   node->kind = YRC_AST_STMT_THROW;
-  
+
+  /* XXX: ASI */
   if (commaexpression(state, 0, &node->data.as_throw.argument, 0)) {
     return 1;
   }
@@ -194,11 +196,13 @@ cleanup:
 }
 
 
-static int _continue(yrc_parser_state_t* state, yrc_ast_node_t** out) {
+static int _continue(yrc_parser_state_t* state, yrc_ast_node_t** out, uint_fast8_t flags) {
   yrc_ast_node_t* node = yrc_pool_attain(state->node_pool);
   if (node == NULL) {
     return 1;
   }
+
+  /* XXX: ASI */
   node->kind = YRC_AST_STMT_CONTINUE;
   node->data.as_continue.label = (state->token->type == YRC_TOKEN_IDENT) ?
     node->data.as_continue.label = state->token :
@@ -208,7 +212,7 @@ static int _continue(yrc_parser_state_t* state, yrc_ast_node_t** out) {
 }
 
 
-static int _do(yrc_parser_state_t* state, yrc_ast_node_t** out) {
+static int _do(yrc_parser_state_t* state, yrc_ast_node_t** out, uint_fast8_t flags) {
   yrc_ast_node_t* node = yrc_pool_attain(state->node_pool);
   *out = node;
   if (node == NULL) return 1;
@@ -270,7 +274,7 @@ static int _parse_forinof(yrc_parser_state_t* state, yrc_ast_node_t* init, yrc_a
 }
 
 
-static int _for(yrc_parser_state_t* state, yrc_ast_node_t** out) {
+static int _for(yrc_parser_state_t* state, yrc_ast_node_t** out, uint_fast8_t flags) {
   /*for (var x in*/
   /*for (var x = 0 in*/
   /*for (var x of*/
@@ -306,7 +310,7 @@ static int _for(yrc_parser_state_t* state, yrc_ast_node_t** out) {
 }
 
 
-static int _if(yrc_parser_state_t* state, yrc_ast_node_t** out) {
+static int _if(yrc_parser_state_t* state, yrc_ast_node_t** out, uint_fast8_t flags) {
   yrc_ast_node_t* node = yrc_pool_attain(state->node_pool);
   *out = node;
   if (node == NULL) return 1;
@@ -680,7 +684,7 @@ static int _function(yrc_parser_state_t* state, yrc_token_t* orig, yrc_ast_node_
 }
 
 
-static int _functionstmt(yrc_parser_state_t* state, yrc_ast_node_t** out) {
+static int _functionstmt(yrc_parser_state_t* state, yrc_ast_node_t** out, uint_fast8_t flags) {
   return _parse_function(state, out, 1, YRC_AST_DECL_FUNCTION);
 }
 
@@ -696,7 +700,7 @@ static int _prefix_paren(yrc_parser_state_t* state, yrc_token_t* orig, yrc_ast_n
 }
 
 
-static int _return(yrc_parser_state_t* state, yrc_ast_node_t** out) {
+static int _return(yrc_parser_state_t* state, yrc_ast_node_t** out, uint_fast8_t flags) {
   yrc_ast_node_t* node = yrc_pool_attain(state->node_pool);
   if (node == NULL) {
     return 1;
@@ -716,6 +720,7 @@ static int _return(yrc_parser_state_t* state, yrc_ast_node_t** out) {
     return 1;
   }
 
+  /* XXX: ASI? */
   if (IS_OP(state->token, SEMICOLON)) {
     return advance(state, YRC_ISNT_REGEXP);
   }
@@ -797,7 +802,7 @@ static int _catch(yrc_parser_state_t* state, yrc_ast_node_t** out) {
 }
 
 
-static int _trystmt(yrc_parser_state_t* state, yrc_ast_node_t** out) {
+static int _trystmt(yrc_parser_state_t* state, yrc_ast_node_t** out, uint_fast8_t flags) {
   yrc_ast_node_t* node = yrc_pool_attain(state->node_pool);
   *out = node;
   if (node == NULL) return 1;
@@ -868,7 +873,7 @@ static int _cases(yrc_parser_state_t* state, yrc_llist_t* cases) {
   return 0;
 }
 
-static int _switchstmt(yrc_parser_state_t* state, yrc_ast_node_t** out) {
+static int _switchstmt(yrc_parser_state_t* state, yrc_ast_node_t** out, uint_fast8_t flags) {
   yrc_ast_node_t* node = yrc_pool_attain(state->node_pool);
   *out = node;
   if (node == NULL) return 1;
@@ -942,22 +947,22 @@ cleanup:
 }
 
 
-static int _var(yrc_parser_state_t* state, yrc_ast_node_t** out) {
+static int _var(yrc_parser_state_t* state, yrc_ast_node_t** out, uint_fast8_t flags) {
   return _decl(state, out, YRC_VARTYPE_VAR);
 }
 
 
-static int _const(yrc_parser_state_t* state, yrc_ast_node_t** out) {
+static int _const(yrc_parser_state_t* state, yrc_ast_node_t** out, uint_fast8_t flags) {
   return _decl(state, out, YRC_VARTYPE_CONST);
 }
 
 
-static int _let(yrc_parser_state_t* state, yrc_ast_node_t** out) {
+static int _let(yrc_parser_state_t* state, yrc_ast_node_t** out, uint_fast8_t flags) {
   return _decl(state, out, YRC_VARTYPE_LET);
 }
 
 
-static int _while(yrc_parser_state_t* state, yrc_ast_node_t** out) {
+static int _while(yrc_parser_state_t* state, yrc_ast_node_t** out, uint_fast8_t flags) {
   yrc_ast_node_t* node = yrc_pool_attain(state->node_pool);
   *out = node;
   if (node == NULL) return 1;
@@ -1225,7 +1230,7 @@ static int statement(yrc_parser_state_t* parser, yrc_ast_node_t** out, uint_fast
     if (advance(parser, YRC_ISNT_REGEXP)) {
       return 1;
     }
-    if (sym->std(parser, out)) {
+    if (sym->std(parser, out, flags)) {
       return 1;
     }
     return 0;
