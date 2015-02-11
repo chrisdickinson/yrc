@@ -280,6 +280,7 @@ typedef struct yrc_tokenizer_s yrc_tokenizer_t;
   XX(STMT_RETURN)\
   XX(STMT_THROW)\
   XX(STMT_TRY)\
+  XX(CLSE_CASE)\
   XX(CLSE_CATCH)\
   XX(CLSE_VAR)\
   XX(STMT_WHILE)\
@@ -334,9 +335,11 @@ typedef enum {
   REL_BLOCK,
   REL_BODY,
   REL_CALLEE,
+  REL_CASES,
   REL_CONSEQUENT,
   REL_DECLARATIONS,
   REL_DEFAULTS,
+  REL_DISCRIMINANT,
   REL_ELEMENTS,
   REL_EXPRESSION,
   REL_FINALIZER,
@@ -508,6 +511,18 @@ typedef struct yrc_ast_node_for_in_s {
   yrc_ast_node_t* body;
 } yrc_ast_node_for_in_t;
 
+
+typedef struct yrc_ast_node_case_s {
+  yrc_ast_node_t* test;
+  yrc_llist_t* consequent;
+} yrc_ast_node_case_t;
+
+
+typedef struct yrc_ast_node_switch_s {
+  yrc_ast_node_t* discriminant;
+  yrc_llist_t* cases;
+} yrc_ast_node_switch_t;
+
 typedef yrc_ast_node_for_in_t yrc_ast_node_for_of_t;
 
 struct yrc_ast_node_s {
@@ -520,6 +535,7 @@ struct yrc_ast_node_s {
     yrc_ast_node_block_t        as_block;
     yrc_ast_node_break_t        as_break;
     yrc_ast_node_call_t         as_call;
+    yrc_ast_node_case_t         as_case;
     yrc_ast_node_catch_t        as_catch;
     yrc_ast_node_conditional_t  as_conditional;
     yrc_ast_node_continue_t     as_continue;
@@ -537,6 +553,7 @@ struct yrc_ast_node_s {
     yrc_ast_node_property_t     as_property;
     yrc_ast_node_return_t       as_return;
     yrc_ast_node_sequence_t     as_sequence;
+    yrc_ast_node_switch_t       as_switch;
     yrc_ast_node_throw_t        as_throw;
     yrc_ast_node_try_t          as_try;
     yrc_ast_node_unary_t        as_unary;
