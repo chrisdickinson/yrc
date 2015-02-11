@@ -61,8 +61,28 @@ static void _traverse(yrc_ast_node_t* node, yrc_visitor_t* visitor, yrc_ast_node
       /* XXX: add when with statements make it in */
     break;
 
+    case YRC_AST_CLSE_CASE:
+      if(node->data.as_case.test)
+      _traverse(node->data.as_case.test,
+                visitor,
+                node,
+                REL_TEST);
+
+      iterator = yrc_llist_iter_start(node->data.as_case.consequent);
+      while ((child = yrc_llist_iter_next(&iterator))) {
+        _traverse(child, visitor, node, REL_CONSEQUENT);
+      }
+    break;
+
     case YRC_AST_STMT_SWITCH:
-      /* XXX: add when switch statements make it in */
+      _traverse(node->data.as_switch.discriminant,
+                visitor,
+                node,
+                REL_DISCRIMINANT);
+      iterator = yrc_llist_iter_start(node->data.as_switch.cases);
+      while ((child = yrc_llist_iter_next(&iterator))) {
+        _traverse(child, visitor, node, REL_CASES);
+      }
     break;
 
     case YRC_AST_STMT_THROW:
