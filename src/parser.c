@@ -3,8 +3,6 @@
 #include "parser.h"
 #include "pool.h"
 #include "traverse.h"
-#include <stdio.h>
-#include <stdlib.h>
 
 typedef int (*yrc_parser_led_t)(yrc_parser_state_t*, yrc_ast_node_t*, yrc_ast_node_t**);
 typedef int (*yrc_parser_nud_t)(yrc_parser_state_t*, yrc_token_t*, yrc_ast_node_t**);
@@ -830,6 +828,70 @@ static int _trystmt(yrc_parser_state_t* state, yrc_ast_node_t** out) {
   return 0;
 }
 
+static int _cases(yrc_parser_state_t* state, yrc_llist_t* cases) {
+  yrc_ast_node_t* node;
+  do {
+    if (IS_OP(state->token, RBRACE)) {
+      break;
+    }
+    node = yrc_pool_attain(state->node_pool);
+    if (node == NULL) {
+      return 1;
+    }
+    node->kind = YRC_AST_CLSE_CASE;
+    if (IS_KW(state->token, CASE)) {
+      CONSUME(state, IS_KW, CASE);
+      if (commaexpression(state, 0, &node->data.as_case.test, 0)) {
+        return 1;
+      }
+    } else if (IS_KW(state->token, DEFAULT)) {
+      CONSUME(state, IS_KW, DEFAULT);
+      node->data.as_case.test = NULL;
+    } else {
+      return 1;
+    }
+    CONSUME(state, IS_OP, COLON);
+    if (yrc_llist_init(&node->data.as_case.consequent)) {
+      return 1;
+    }
+
+    if (statements(state, node->data.as_case.consequent)) {
+      return 1;
+    }
+
+    if (yrc_llist_push(cases, node)) {
+      return 1;
+    }
+    node = NULL;
+  } while(1);
+
+  return 0;
+}
+
+static int _switchstmt(yrc_parser_state_t* state, yrc_ast_node_t** out) {
+  yrc_ast_node_t* node = yrc_pool_attain(state->node_pool);
+  *out = node;
+  if (node == NULL) return 1;
+  node->kind = YRC_AST_STMT_SWITCH;
+  if (yrc_llist_init(&node->data.as_switch.cases)) {
+    return 1;
+  }
+
+  CONSUME_CLEAN(state, IS_OP, LPAREN, { goto cleanup; });
+  if (commaexpression(state, 0, &node->data.as_switch.discriminant, YRC_ISNT_REGEXP)) {
+    goto cleanup;
+  }
+  CONSUME_CLEAN(state, IS_OP, RPAREN, { goto cleanup; });
+  CONSUME_CLEAN(state, IS_OP, LBRACE, { goto cleanup; });
+  if (_cases(state, node->data.as_switch.cases)) {
+    return 1;
+  }
+  CONSUME_CLEAN(state, IS_OP, RBRACE, { goto cleanup; });
+  return 0;
+cleanup:
+  yrc_llist_free(node->data.as_switch.cases);
+  return 1;
+}
 
 static int _decl(yrc_parser_state_t* state, yrc_ast_node_t** out, yrc_var_type type) {
   yrc_ast_node_t* node = yrc_pool_attain(state->node_pool);
@@ -873,13 +935,6 @@ static int _decl(yrc_parser_state_t* state, yrc_ast_node_t** out, yrc_var_type t
       return 1;
     }
   } while(1);
-  if (!IS_OP(state->token, SEMICOLON)) {
-    return !(state->saw_newline || IS_OP(state->token, RBRACE) || IS_EOF(state->token));
-  }
-  /* consume semicolon! */
-  if (advance(state, YRC_ISNT_REGEXP)) {
-    return 1;
-  }
 
   return 0;
 cleanup:
@@ -967,6 +1022,7 @@ static int _this(yrc_parser_state_t* state, yrc_token_t* orig, yrc_ast_node_t** 
   XX(stmtvar,        KEYWORD, as_keyword == YRC_KW_VAR,         0, NULL,      NULL, _var)\
   XX(stmtlet,        KEYWORD, as_keyword == YRC_KW_LET,         0, NULL,      NULL, _let)\
   XX(stmtconst,      KEYWORD, as_keyword == YRC_KW_CONST,       0, NULL,      NULL, _const)\
+  XX(stmtswitch,     KEYWORD, as_keyword == YRC_KW_SWITCH,      0, NULL,      NULL, _switchstmt)\
   XX(exprin,         KEYWORD, as_keyword == YRC_KW_IN,         50, NULL,      _infix, NULL)\
   XX(exprfunction,   KEYWORD, as_keyword == YRC_KW_FUNCTION,    0, _function, NULL, _functionstmt)\
   XX(exprvoid,       KEYWORD, as_keyword == YRC_KW_VOID,        0, _prefix,   NULL, NULL)\
@@ -977,6 +1033,8 @@ static int _this(yrc_parser_state_t* state, yrc_token_t* orig, yrc_ast_node_t** 
   XX(null_else,      KEYWORD, as_keyword == YRC_KW_ELSE,        0, NULL, NULL, NULL)\
   XX(null_catch,     KEYWORD, as_keyword == YRC_KW_CATCH,       0, NULL, NULL, NULL)\
   XX(null_finally,   KEYWORD, as_keyword == YRC_KW_FINALLY,     0, NULL, NULL, NULL)\
+  XX(null_case,      KEYWORD, as_keyword == YRC_KW_CASE,        0, NULL, NULL, NULL)\
+  XX(null_default,   KEYWORD, as_keyword == YRC_KW_DEFAULT,     0, NULL, NULL, NULL)\
   XX(exprlparen,     OPERATOR, as_operator == YRC_OP_LPAREN,     80, _prefix_paren, _call, NULL)\
   XX(lbrace,         OPERATOR, as_operator == YRC_OP_LBRACE,      0, _prefix_object, NULL, _block)\
   XX(exprdot,        OPERATOR, as_operator == YRC_OP_DOT,        80, NULL, _get, NULL)\
@@ -1095,6 +1153,7 @@ static int advance(yrc_parser_state_t* parser, uint_fast8_t flags) {
 SYMBOLS(STATE)
 #undef STATE
   /* unhandled token */
+  UNREACHABLE();
   return 1;
 }
 
@@ -1198,7 +1257,10 @@ static int statement(yrc_parser_state_t* parser, yrc_ast_node_t** out, uint_fast
 static int statements(yrc_parser_state_t* parser, yrc_llist_t* out) {
   yrc_ast_node_t* stmt;
   while (1) {
-    if (IS_OP(parser->token, RBRACE) || IS_EOF(parser->token)) {
+    if (IS_OP(parser->token, RBRACE) ||
+        IS_EOF(parser->token) ||
+        IS_KW(parser->token, CASE) ||
+        IS_KW(parser->token, DEFAULT)) {
       break;
     }
     stmt = NULL;
@@ -1284,7 +1346,10 @@ YRC_EXTERN int yrc_parse(yrc_parse_request_t* req, yrc_parse_response_t** out) {
   return 0;
 }
 
+
 static yrc_visitor_mode free_node(yrc_ast_node_t* node, yrc_rel rel, yrc_ast_node_t* parent, void* ctx);
+
+
 YRC_EXTERN int yrc_parse_free(yrc_parse_response_t* resp_) {
   yrc_parse_response_priv_t* resp;
   yrc_visitor_t visitor;
@@ -1302,6 +1367,12 @@ YRC_EXTERN int yrc_parse_free(yrc_parse_response_t* resp_) {
 static yrc_visitor_mode free_node(yrc_ast_node_t* node, yrc_rel rel, yrc_ast_node_t* parent, void* ctx) {
   switch (node->kind) {
     default: return kYrcTraverseContinue;
+    case YRC_AST_CLSE_CASE:
+      yrc_llist_free(node->data.as_case.consequent);
+    break;
+    case YRC_AST_STMT_SWITCH:
+      yrc_llist_free(node->data.as_switch.cases);
+    break;
     case YRC_AST_EXPR_FUNCTION:
     case YRC_AST_DECL_FUNCTION:
       yrc_llist_free(node->data.as_function.params);
