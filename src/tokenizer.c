@@ -515,10 +515,12 @@ int is_alnum(char ch) {
       case 'u':\
       case 'U':\
         state = YRC_TKS_STRING_UNICODE;\
+        flags = 0;\
         goto restart;\
       case 'x':\
       case 'X':\
         state = YRC_TKS_STRING_HEX;\
+        flags = 0;\
         goto restart;\
       default:\
         return 1;\
@@ -564,7 +566,44 @@ int is_alnum(char ch) {
         break;\
     }\
   }) \
-  XX(STRING_UNICODE, string_unicode, {}) \
+  XX(STRING_UNICODE, string_unicode, {\
+    while(1) {\
+      if (eof) return 1;\
+      if (flags) {\
+        state = YRC_TKS_STRING;\
+        flags = 0;\
+        break;\
+      }\
+      switch (data[offset]) {\
+        case 'a': case 'A':\
+        case 'b': case 'B':\
+        case 'c': case 'C':\
+        case 'd': case 'D':\
+        case 'f': case 'F':\
+        case '0': case '1': case '2':\
+        case '3': case '4': case '5':\
+        case '6': case '7': case '8':\
+        case '9': break;\
+        default:\
+        return 1;\
+      }\
+      ++flags;\
+      last = data[offset];\
+      ++offset;\
+    }\
+    diff = offset - start;\
+    fpos += diff;\
+    col += diff;\
+    if (yrc_accum_copy(primary, data + start, diff)) {\
+      return 1;\
+    }\
+    start = offset;\
+    if (pending_read) {\
+      pending_read = 0;\
+      break;\
+    }\
+    state = YRC_TKS_STRING;\
+  })\
   XX(STRING_HEX, string_hex, {}) \
   XX(NUMBER, number, STATE_BORROW({\
     should_break = 0;\
