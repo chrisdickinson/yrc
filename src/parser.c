@@ -898,7 +898,7 @@ cleanup:
   return 1;
 }
 
-static int _decl(yrc_parser_state_t* state, yrc_ast_node_t** out, yrc_var_type type) {
+static int _decl(yrc_parser_state_t* state, yrc_ast_node_t** out, yrc_var_type type, uint_fast8_t flags) {
   yrc_ast_node_t* node = yrc_pool_attain(state->node_pool);
   yrc_ast_node_t* item = NULL;
   *out = node;
@@ -916,14 +916,14 @@ static int _decl(yrc_parser_state_t* state, yrc_ast_node_t** out, yrc_var_type t
     item->data.as_vardecl.init = NULL;
 
     /* don't take any assignment operations */
-    if (expression(state, 10, &item->data.as_vardecl.id, 0)) {
+    if (expression(state, 10, &item->data.as_vardecl.id, flags)) {
       return 1;
     }
     if (IS_OP(state->token, EQ)) {
       if (advance(state, YRC_ISNT_REGEXP)) {
         return 1;
       }
-      if (expression(state, 0, &item->data.as_vardecl.init, 0)) {
+      if (expression(state, 0, &item->data.as_vardecl.init, flags)) {
         return 1;
       }
     }
@@ -941,6 +941,8 @@ static int _decl(yrc_parser_state_t* state, yrc_ast_node_t** out, yrc_var_type t
     }
   } while(1);
 
+  /* XXX: ASI */
+
   return 0;
 cleanup:
   return 1;
@@ -948,17 +950,17 @@ cleanup:
 
 
 static int _var(yrc_parser_state_t* state, yrc_ast_node_t** out, uint_fast8_t flags) {
-  return _decl(state, out, YRC_VARTYPE_VAR);
+  return _decl(state, out, YRC_VARTYPE_VAR, flags);
 }
 
 
 static int _const(yrc_parser_state_t* state, yrc_ast_node_t** out, uint_fast8_t flags) {
-  return _decl(state, out, YRC_VARTYPE_CONST);
+  return _decl(state, out, YRC_VARTYPE_CONST, flags);
 }
 
 
 static int _let(yrc_parser_state_t* state, yrc_ast_node_t** out, uint_fast8_t flags) {
-  return _decl(state, out, YRC_VARTYPE_LET);
+  return _decl(state, out, YRC_VARTYPE_LET, flags);
 }
 
 
