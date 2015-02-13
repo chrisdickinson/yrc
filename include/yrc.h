@@ -28,10 +28,6 @@ extern "C" {
 # define YRC_EXTERN /* nothing */
 #endif
 
-#ifndef FPOS_T
-#define FPOS_T uint64_t
-#endif
-
 typedef struct yrc_llist_s yrc_llist_t;
 typedef int (*yrc_llist_iter_cb_t)(void*, size_t, void*, int*);
 typedef int (*yrc_llist_map_cb_t)(void*, void**, size_t, void*);
@@ -246,21 +242,20 @@ typedef struct yrc_token_whitespace_s {
 } yrc_token_whitespace_t;
 
 typedef struct yrc_position_s {
-  FPOS_T line;
-  FPOS_T col;
-  FPOS_T fpos;
+  size_t line;
+  size_t col;
+  size_t fpos;
 } yrc_position_t;
 
 typedef struct yrc_token_s {
   yrc_token_type type;
-  yrc_position_t start;
-  yrc_position_t end;
-
   union {
 #define XX(a, b) yrc_token_##b##_t as_##b;
   YRC_TOKEN_TYPES(XX)
 #undef XX
   } info;
+  yrc_position_t start;
+  yrc_position_t end;
 } yrc_token_t;
 
 typedef struct yrc_tokenizer_s yrc_tokenizer_t;
@@ -582,7 +577,7 @@ YRC_EXTERN int yrc_parse(yrc_parse_request_t*, yrc_parse_response_t**);
 YRC_EXTERN int yrc_parse_free(yrc_parse_response_t*);
 YRC_EXTERN int yrc_error(yrc_error_t*, char*, size_t);
 YRC_EXTERN int yrc_error_token(yrc_error_t*, const char**);
-YRC_EXTERN int yrc_error_position(yrc_error_t*, FPOS_T*, FPOS_T*, FPOS_T*);
+YRC_EXTERN int yrc_error_position(yrc_error_t*, size_t*, size_t*, size_t*);
 
 #ifdef __cplusplus
 }

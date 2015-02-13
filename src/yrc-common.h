@@ -51,9 +51,9 @@
 
 #define YRC_ERROR_BASE \
   yrc_parse_error_type type;\
-  FPOS_T line;\
-  FPOS_T fpos;\
-  FPOS_T col
+  size_t line;\
+  size_t fpos;\
+  size_t col
 
 struct yrc_error_s {
   YRC_ERROR_BASE;

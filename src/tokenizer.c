@@ -24,9 +24,9 @@ typedef uint32_t yrc_tokenizer_state;
 struct yrc_tokenizer_s {
   yrc_pool_t* token_pool;
   yrc_llist_t* tokens;
-  FPOS_T fpos;
-  FPOS_T line;
-  FPOS_T col;
+  size_t fpos;
+  size_t line;
+  size_t col;
   size_t offset;
   size_t start;
   size_t size;
@@ -868,7 +868,7 @@ int yrc_tokenizer_scan(
     yrc_readcb read, 
     yrc_token_t** out, 
     yrc_scan_allow_regexp regexp_mode) {
-  FPOS_T last_fpos, last_line, last_col, fpos, line, col;
+  size_t last_fpos, last_line, last_col, fpos, line, col;
   yrc_tokenizer_state state = YRC_TKS_DEFAULT;
   size_t offset, start, diff, size, tokensize;
   yrc_accum_t *primary, *secondary;
