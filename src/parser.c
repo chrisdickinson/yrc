@@ -68,7 +68,7 @@ static int expression(yrc_parser_state_t*, uint_fast32_t, yrc_ast_node_t**, uint
 static int statement(yrc_parser_state_t*, yrc_ast_node_t**, uint_fast8_t);
 static int statements(yrc_parser_state_t*, yrc_llist_t*);
 static int _ident(yrc_parser_state_t*, yrc_token_t*, yrc_ast_node_t**);
-static yrc_token_t eof = {YRC_TOKEN_EOF, {0, 0, 0}, {0, 0, 0}, {{0, 0, NULL}}};
+static yrc_token_t eof = {YRC_TOKEN_EOF, {{0, 0, NULL}}, {0, 0, 0}, {0, 0, 0}};
 static yrc_parser_symbol_t sym_eof = {NULL, NULL, NULL, 0};
 
 
