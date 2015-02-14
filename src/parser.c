@@ -72,7 +72,7 @@ static yrc_token_t eof = {YRC_TOKEN_EOF, {0, 0, 0}, {0, 0, 0}, {{0, 0, NULL}}};
 static yrc_parser_symbol_t sym_eof = {NULL, NULL, NULL, 0};
 
 
-static int _block(yrc_parser_state_t* state, yrc_ast_node_t** out) {
+static int _block(yrc_parser_state_t* state, yrc_ast_node_t** out, uint_fast8_t flags) {
   yrc_ast_node_t* node = yrc_pool_attain(state->node_pool);
   if (node == NULL) {
     return 1;
@@ -665,7 +665,7 @@ static int _parse_function(yrc_parser_state_t* state, yrc_ast_node_t** out, uint
     goto cleanup;
   }
   CONSUME_CLEAN(state, IS_OP, LBRACE, { goto cleanup; });
-  if (_block(state, &node->data.as_function.body)) {
+  if (_block(state, &node->data.as_function.body, 0)) {
     goto cleanup;
   }
   return 0;
@@ -772,7 +772,7 @@ static int _ternary(yrc_parser_state_t* state, yrc_ast_node_t* left, yrc_ast_nod
 }
 
 
-static int _catch(yrc_parser_state_t* state, yrc_ast_node_t** out) {
+static int _catch(yrc_parser_state_t* state, yrc_ast_node_t** out, uint_fast8_t flags) {
   yrc_ast_node_t* node = yrc_pool_attain(state->node_pool);
   *out = node;
   if (node == NULL) return 1;
@@ -786,7 +786,7 @@ static int _catch(yrc_parser_state_t* state, yrc_ast_node_t** out) {
   }
   CONSUME(state, IS_OP, RPAREN);
   CONSUME(state, IS_OP, LBRACE);
-  if (_block(state, &node->data.as_catch.body)) {
+  if (_block(state, &node->data.as_catch.body, 0)) {
     return 1;
   }
   if (IS_KW(state->token, FINALLY)) {
@@ -794,7 +794,7 @@ static int _catch(yrc_parser_state_t* state, yrc_ast_node_t** out) {
       return 1;
     }
     CONSUME(state, IS_OP, LBRACE);
-    if (_block(state, &node->data.as_try.finalizer)) {
+    if (_block(state, &node->data.as_try.finalizer, 0)) {
       return 1;
     }
   }
@@ -808,7 +808,7 @@ static int _trystmt(yrc_parser_state_t* state, yrc_ast_node_t** out, uint_fast8_
   if (node == NULL) return 1;
   node->kind = YRC_AST_STMT_TRY;
   CONSUME(state, IS_OP, LBRACE);
-  if (_block(state, &node->data.as_try.block)) {
+  if (_block(state, &node->data.as_try.block, 0)) {
     return 1;
   }
 
@@ -816,14 +816,14 @@ static int _trystmt(yrc_parser_state_t* state, yrc_ast_node_t** out, uint_fast8_
     if (advance(state, YRC_ISNT_REGEXP)) {
       return 1;
     }
-    return _catch(state, &node->data.as_try.handler);
+    return _catch(state, &node->data.as_try.handler, 0);
   } else if (IS_KW(state->token, FINALLY)) {
     node->data.as_try.handler = NULL;
     if (advance(state, YRC_ISNT_REGEXP)) {
       return 1;
     }
     CONSUME(state, IS_OP, LBRACE);
-    if (_block(state, &node->data.as_try.finalizer)) {
+    if (_block(state, &node->data.as_try.finalizer, 0)) {
       return 1;
     }
   } else {
