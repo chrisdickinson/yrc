@@ -1,6 +1,4 @@
 #include "yrc-common.h"
-#include "llist.h"
-#include <stdlib.h> /* malloc + free */
 #include "pool.h"
 
 typedef struct yrc_llist_node_s {

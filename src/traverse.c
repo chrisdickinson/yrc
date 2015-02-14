@@ -1,5 +1,4 @@
 #include "traverse.h"
-#include "llist.h"
 
 static void _traverse(yrc_ast_node_t* node, yrc_visitor_t* visitor, yrc_ast_node_t* parent, yrc_rel rel) {
   visitor->enter(node, rel, parent, visitor);

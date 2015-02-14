@@ -1,5 +1,4 @@
 #include "yrc-common.h"
-#include "llist.h"
 #include "parser.h"
 #include "pool.h"
 #include "traverse.h"

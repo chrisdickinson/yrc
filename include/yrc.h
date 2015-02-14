@@ -28,18 +28,7 @@ extern "C" {
 # define YRC_EXTERN /* nothing */
 #endif
 
-typedef struct yrc_llist_s yrc_llist_t;
-typedef int (*yrc_llist_iter_cb_t)(void*, size_t, void*, int*);
-typedef int (*yrc_llist_map_cb_t)(void*, void**, size_t, void*);
-typedef int (*yrc_llist_filter_cb_t)(void*, int*, size_t, void*);
-typedef int (*yrc_llist_reduce_cb_t)(void*, void*, void**, size_t, void*);
-int yrc_llist_foreach(yrc_llist_t*, yrc_llist_iter_cb_t, void*);
-int yrc_llist_map(yrc_llist_t*, yrc_llist_t*, yrc_llist_map_cb_t, void*);
-int yrc_llist_filter(yrc_llist_t*, yrc_llist_t*, yrc_llist_filter_cb_t, void*);
-int yrc_llist_reduce(yrc_llist_t*, void**, yrc_llist_reduce_cb_t, void*, void*);
-int yrc_llist_any(yrc_llist_t*, int*, yrc_llist_filter_cb_t, void*);
-int yrc_llist_all(yrc_llist_t*, int*, yrc_llist_filter_cb_t, void*);
-
+#include "yrc_llist.h"
 
 /**
   token types -- in "ENUM" and "ident"
@@ -247,6 +236,8 @@ typedef struct yrc_position_s {
   size_t fpos;
 } yrc_position_t;
 
+/* XXX: use a tree structure for file positions so we don't have
+   an 80 byte token type */
 typedef struct yrc_token_s {
   yrc_token_type type;
   union {

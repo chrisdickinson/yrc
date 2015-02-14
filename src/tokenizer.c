@@ -1,5 +1,4 @@
 #include "yrc-common.h"
-#include "llist.h"
 #include "tokenizer.h"
 #include "pool.h"
 #include <stdlib.h>
@@ -936,8 +935,11 @@ export:
 }
 
 void yrc_token_repr(yrc_token_t* tk) {
-  printf("%llu:%llu %s ⟪ ", tk->start.line, tk->start.col, TOKEN_TYPES_MAP[tk->type]);
+  printf("%lu:%lu %s ⟪ ", tk->start.line, tk->start.col, TOKEN_TYPES_MAP[tk->type]);
   switch (tk->type) {
+    case YRC_TOKEN_EOF:
+      printf("(eof)");
+    break;
     case YRC_TOKEN_COMMENT:
       fwrite(tk->info.as_comment.data, tk->info.as_comment.size, 1, stdout);
     break;
