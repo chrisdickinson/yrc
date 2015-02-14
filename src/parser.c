@@ -1,7 +1,7 @@
 #include "yrc-common.h"
-#include "parser.h"
-#include "pool.h"
 #include "traverse.h"
+#include "tokenizer.h"
+#include "pool.h"
 
 typedef int (*yrc_parser_led_t)(yrc_parser_state_t*, yrc_ast_node_t*, yrc_ast_node_t**);
 typedef int (*yrc_parser_nud_t)(yrc_parser_state_t*, yrc_token_t*, yrc_ast_node_t**);
@@ -26,11 +26,6 @@ typedef struct yrc_parse_error_s {
   yrc_token_t got;
   yrc_token_t expected;
 } yrc_parse_error_t;
-
-int nop(char* relationship, yrc_ast_node_type type, void* ctx) {
-  return 0;
-}
-
 
 #define MAX(a, b) ((a) > (b) ? (a) : (b))
 #define IS_EOF(K) (K == &eof)
