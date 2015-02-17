@@ -61,5 +61,19 @@ struct yrc_error_s {
 
 extern yrc_error_t yrc_error_mem;
 
+static inline size_t npot(size_t in) {
+  --in;
+  in = in | (in >> 1);
+  in = in | (in >> 2);
+  in = in | (in >> 4);
+  in = in | (in >> 8);
+  in = in | (in >> 16);
+  in = in | (in >> 32);
+  ++in;
+
+  return in;
+}
+
+
 #define UNREACHABLE() do { abort(); } while (0)
 #endif

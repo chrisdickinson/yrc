@@ -11,19 +11,6 @@ struct yrc_accum_s {
 };
 
 
-static size_t _npot(size_t in) {
-  --in;
-  in = in | (in >> 1);
-  in = in | (in >> 2);
-  in = in | (in >> 4);
-  in = in | (in >> 8);
-  in = in | (in >> 16);
-  in = in | (in >> 32);
-  ++in;
-
-  return in;
-}
-
 static int _check_resize(yrc_accum_t* accum, size_t desired) {
   size_t new_size;
   char* new_head;
@@ -31,7 +18,7 @@ static int _check_resize(yrc_accum_t* accum, size_t desired) {
     return 0;
   }
 
-  new_size = _npot(accum->offs + desired);
+  new_size = npot(accum->offs + desired);
   new_head = realloc(accum->head, new_size);
   if (new_head == NULL) {
     return 1;
