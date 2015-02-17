@@ -31,6 +31,7 @@ extern "C" {
 #include "yrc_llist.h"
 #include "yrc_tokens.h"
 #include "yrc_ast.h"
+#include "yrc_str.h"
 
 typedef size_t (*yrc_readcb)(char*, size_t, void*);
 typedef struct yrc_parse_request_s {

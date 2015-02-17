@@ -68,6 +68,7 @@
         'src/parser.c',
         'src/pool.c',
         'src/traverse.c',
+        'src/str.c',
       ]
     },
 
