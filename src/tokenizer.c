@@ -365,8 +365,6 @@ int yrc_tokenizer_scan(
   yrc_keyword_t kw;
   char should_break = 0;
   yrc_token_t* tk;
-  uint_fast8_t eof;
-  uint_fast8_t flags;
   char delim;
   int pending_read = 0;
 
