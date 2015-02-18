@@ -47,6 +47,7 @@ struct yrc_tokenizer_s {
   size_t offset;
   size_t start;
   size_t size;
+  size_t last_nl;
 
   uint_fast8_t eof;
   uint_fast8_t flags;
@@ -205,6 +206,7 @@ int yrc_tokenizer_init(yrc_tokenizer_t** state, size_t chunksz, void* ctx) {
     return 1;
   }
 
+  obj->last_nl = 0;
   obj->eof = 0;
   obj->chunksz = chunksz;
   obj->data = malloc(chunksz);
@@ -354,7 +356,7 @@ int yrc_tokenizer_scan(
     yrc_readcb read, 
     yrc_token_t** out, 
     yrc_scan_allow_regexp regexp_mode) {
-  size_t last_fpos, last_line, last_col, fpos, line, col;
+  size_t last_fpos, last_line, last_col, fpos, line;
   yrc_tokenizer_state state = YRC_TKS_DEFAULT;
   size_t offset, start, diff;
   yrc_op_t *op_current, *op_last;
@@ -372,7 +374,7 @@ int yrc_tokenizer_scan(
   data = tokenizer->data;
   last_fpos = fpos = tokenizer->fpos;
   last_line = line = tokenizer->line;
-  last_col = col = tokenizer->col;
+  last_col = tokenizer->col;
   offset = tokenizer->offset;
 
   switch (regexp_mode) {
@@ -412,14 +414,12 @@ restart:
                 delim = '"';
                 ++offset;
                 ++fpos;
-                ++col;
                 goto restart;
               case '\'':
                 state = YRC_TKS_STRING;
                 delim = '\'';
                 ++offset;
                 ++fpos;
-                ++col;
                 goto restart;
               WHITESPACE_MAP(TO_CASE)
                 state = YRC_TKS_WHITESPACE;
@@ -438,7 +438,6 @@ restart:
                 }
                 ++offset;
                 ++fpos;
-                ++col;
                 goto export;
               NUMERIC_MAP(TO_CASE)
                 last = 0;
@@ -458,7 +457,6 @@ restart:
               default:
                 ++offset;
                 ++fpos;
-                ++col;
                 break;
             }
           };
@@ -473,9 +471,7 @@ restart:
               }
               if (data[offset] == '\n') {
                 ++line;
-                col = 0;
-              } else {
-                ++col;
+                tokenizer->last_nl = offset;
               }
               last = data[offset];
               ++offset;
@@ -517,7 +513,6 @@ restart:
                   if (yrc_str_pushv(&tokenizer->current, data + start, offset - start)) {
                     return 1;
                   }
-                  ++col;
                   ++fpos;
                   ++offset;
                   goto restart;
@@ -528,7 +523,6 @@ restart:
             }
             diff = offset - start;
             fpos += diff;
-            col += diff;
             if (yrc_str_pushv(&tokenizer->current, data + start, diff)) {
               return 1;
             }
@@ -543,7 +537,6 @@ restart:
               return 1;
             }
             tk->type = YRC_TOKEN_STRING;
-            ++col;
             ++fpos;
             ++offset;
             tk->info.as_string.delim = delim == '\'' ? YRC_STRING_DELIM_SINGLE : YRC_STRING_DELIM_DOUBLE;
@@ -553,7 +546,6 @@ restart:
           break;
 
         case YRC_TKS_STRING_ESCAPE: {
-            ++col;
             ++fpos;
             ++offset;
             switch (data[offset - 1]) {
@@ -663,7 +655,6 @@ restart:
             }
             diff = offset - start;
             fpos += diff;
-            col += diff;
             if (yrc_str_pushv(&tokenizer->current, data + start, diff)) {
               return 1;
             }
@@ -763,7 +754,6 @@ restart:
             }
             diff = offset - start;
             fpos += diff;
-            col += diff;
             if (yrc_str_pushv(&tokenizer->current, data + start, diff)) {
               return 1;
             }
@@ -810,7 +800,6 @@ restart:
             }
             diff = offset - start;
             fpos += diff;
-            col += diff;
             if (yrc_str_pushv(&tokenizer->current, data + start, diff)) {
               return 1;
             }
@@ -862,7 +851,6 @@ restart:
                     yrc_str_xfer(&tokenizer->current, NULL);
                     ++offset;
                     ++fpos;
-                    ++col;
                     goto restart;
                   }
                   if (op_current == &SOLIDUS_NUL) {
@@ -870,7 +858,6 @@ restart:
                     yrc_str_xfer(&tokenizer->current, NULL);
                     ++offset;
                     ++fpos;
-                    ++col;
                     goto restart;
                   }
                 }
@@ -886,7 +873,6 @@ restart:
             }
             diff = offset - start;
             fpos += diff;
-            col += diff;
             if (yrc_str_pushv(&tokenizer->current, data + start, diff)) {
               return 1;
             }
@@ -927,7 +913,6 @@ restart:
             }
             diff = offset - start;
             fpos += diff;
-            col += diff;
             if (yrc_str_pushv(&tokenizer->current, data + start, diff)) {
               return 1;
             }
@@ -958,9 +943,7 @@ restart:
                 if (tokenizer->eof) return 1;
                 if (data[offset] == '\n') {
                   ++line;
-                  col = 0;
-                } else {
-                  ++col;
+                  tokenizer->last_nl = offset;
                 }
                 if (data[offset] == '/' && last == '*') {
                   state = YRC_TKS_DEFAULT;
@@ -974,7 +957,6 @@ restart:
             }
             diff = offset - start;
             fpos += diff;
-            col += diff;
             if (yrc_str_pushv(&tokenizer->current, data + start, diff)) {
               return 1;
             }
@@ -1018,7 +1000,6 @@ restart:
             }
             diff = offset - start;
             fpos += diff;
-            col += diff;
             if (yrc_str_pushv(&tokenizer->current, data + start, diff)) {
               return 1;
             }
@@ -1077,7 +1058,6 @@ restart:
             }
             diff = offset - start;
             fpos += diff;
-            col += diff;
             start = offset;
             if (pending_read) {
               pending_read = 0;
@@ -1095,9 +1075,6 @@ restart:
           };
           break;
 
-
-
-
         default:
           printf("in weird state %d", state);
           UNREACHABLE();
@@ -1112,7 +1089,7 @@ restart:
   tokenizer->start = start;
   tokenizer->fpos = fpos;
   tokenizer->line = line;
-  tokenizer->col = col;
+  tokenizer->col = fpos - tokenizer->last_nl;
   tokenizer->offset = offset;
 
   return 0;
@@ -1122,7 +1099,7 @@ export:
   tk->start.col = last_col;
   tk->end.fpos = fpos;
   tk->end.line = line;
-  tk->end.col = col;
+  tk->end.col = fpos - tokenizer->last_nl;
   if (yrc_llist_push(tokenizer->tokens, tk)) {
     return 1;
   }
@@ -1130,7 +1107,7 @@ export:
   tokenizer->start = start;
   tokenizer->fpos = fpos;
   tokenizer->line = line;
-  tokenizer->col = col;
+  tokenizer->col = tk->end.col;
   tokenizer->offset = offset;
 
   return 0;
