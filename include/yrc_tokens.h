@@ -17,76 +17,62 @@
 
 /**
   keywords -- from string to ENUM.
+
+  ORDER MATTERS. If you change this, make sure
+  to update src/tokenizer.c.
 **/
 #define YRC_KEYWORD_MAP(XX) \
-  XX("break", BREAK)\
+  XX("do", DO)\
+  XX("in", IN)\
+  XX("of", OF)\
+  XX("if", IF)\
+  XX("for", FOR)\
+  XX("let", LET)\
+  XX("new", NEW)\
+  XX("try", TRY)\
+  XX("var", VAR)\
+  XX("void", VOID)\
+  XX("with", WITH)\
+  XX("this", THIS)\
   XX("case", CASE)\
+  XX("else", ELSE)\
+  XX("break", BREAK)\
   XX("catch", CATCH)\
   XX("class", CLASS)\
   XX("const", CONST)\
-  XX("continue", CONTINUE)\
-  XX("debugger", DEBUGGER)\
-  XX("default", DEFAULT)\
+  XX("super", SUPER)\
+  XX("throw", THROW)\
+  XX("while", WHILE)\
+  XX("yield", YIELD)\
   XX("delete", DELETE)\
-  XX("do", DO)\
-  XX("else", ELSE)\
   XX("export", EXPORT)\
+  XX("import", IMPORT)\
+  XX("return", RETURN)\
+  XX("switch", SWITCH)\
+  XX("typeof", TYPEOF)\
+  XX("default", DEFAULT)\
   XX("extends", EXTENDS)\
   XX("finally", FINALLY)\
-  XX("for", FOR)\
   XX("function", FUNCTION)\
-  XX("if", IF)\
-  XX("import", IMPORT)\
-  XX("in", IN)\
+  XX("continue", CONTINUE)\
+  XX("debugger", DEBUGGER)\
   XX("instanceof", INSTANCEOF)\
-  XX("let", LET)\
-  XX("of", OF)\
-  XX("new", NEW)\
-  XX("return", RETURN)\
-  XX("super", SUPER)\
-  XX("switch", SWITCH)\
-  XX("this", THIS)\
-  XX("throw", THROW)\
-  XX("try", TRY)\
-  XX("typeof", TYPEOF)\
-  XX("var", VAR)\
-  XX("void", VOID)\
-  XX("while", WHILE)\
-  XX("with", WITH)\
-  XX("yield", YIELD)
 
 
 /**
   operators -- from string to ENUM.
+
+  ORDER MATTERS. If you change this, make sure
+  to update src/tokenizer.c.
 **/
 #define YRC_OPERATOR_MAP(XX) \
   XX("=", EQ)\
-  XX("==", EQEQ)\
-  XX("===", EQEQEQ)\
   XX("+", ADD)\
-  XX("+=", ADDEQ)\
-  XX("++", INCR)\
   XX("-", SUB)\
-  XX("-=", SUBEQ)\
-  XX("--", DECR)\
   XX("!", NOT)\
-  XX("!=", NOTEQ)\
-  XX("!==", NOTEQEQ)\
   XX("&", AND)\
-  XX("&=", ANDEQ)\
-  XX("&&", LAND)\
-  XX("|", OR)\
-  XX("|=", OREQ)\
-  XX("||", LOR)\
-  XX("^", XOR)\
-  XX("^=", XOREQ)\
-  XX("^^", LXOR)\
-  XX("%", MOD)\
-  XX("%=", MODEQ)\
   XX("*", MUL)\
-  XX("*=", MULEQ)\
   XX("/", DIV)\
-  XX("/=", DIVEQ)\
   XX("(", LPAREN)\
   XX(")", RPAREN)\
   XX(".", DOT)\
@@ -100,15 +86,36 @@
   XX("[", LBRACK)\
   XX("]", RBRACK)\
   XX("<", LESSER)\
+  XX("|", OR)\
+  XX("^", XOR)\
+  XX("%", MOD)\
+  XX(">", GREATER)\
+  XX("==", EQEQ)\
+  XX("+=", ADDEQ)\
+  XX("++", INCR)\
+  XX("-=", SUBEQ)\
+  XX("--", DECR)\
+  XX("!=", NOTEQ)\
+  XX("&=", ANDEQ)\
+  XX("&&", LAND)\
+  XX("|=", OREQ)\
+  XX("||", LOR)\
+  XX("^=", XOREQ)\
+  XX("^^", LXOR)\
+  XX("%=", MODEQ)\
+  XX("/=", DIVEQ)\
+  XX("*=", MULEQ)\
   XX("<=", LESSEREQ)\
   XX("<<", LSHF)\
-  XX("<<=", LSHFEQ)\
-  XX(">", GREATER)\
   XX(">=", GREATEREQ)\
   XX(">>", RSHF)\
+  XX("=>", FARROW)\
+  XX("<<=", LSHFEQ)\
+  XX("===", EQEQEQ)\
+  XX("!==", NOTEQEQ)\
   XX(">>=", RSHFEQ)\
   XX(">>>", URSHF)\
-  XX(">>>=", URSHFEQ)
+  XX(">>>=", URSHFEQ)\
 
 typedef enum {
   YRC_OP_NULL=0,
@@ -124,7 +131,7 @@ typedef enum {
 #define XX(a, b) YRC_KW_##b,
   YRC_KEYWORD_MAP(XX)
 #undef XX
-  YRC_OP_FINAL
+  YRC_KW_LAST
 } yrc_keyword_t;
 typedef yrc_keyword_t yrc_token_keyword_t;
 

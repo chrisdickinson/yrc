@@ -148,21 +148,21 @@ yrc_op_t* OPERATORS[] = {
 };
 
 yrc_operator_t _string_to_operator(yrc_str_t* str) {
-  size_t i;
-  size_t j;
-
+  yrc_operator_t i;
+  yrc_operator_t end;
   size_t size = yrc_str_len(str);
   char* data = yrc_str_ptr(str);
 
-  for(i = 1; i < sizeof(TOKEN_OPERATOR_MAP) / sizeof(TOKEN_OPERATOR_MAP[0]); ++i) {
-    for(j = 0; j < size && TOKEN_OPERATOR_MAP[i][j] != 0; ++j) {
-      if (TOKEN_OPERATOR_MAP[i][j] != data[j]) {
-        break;
+  switch (size) {
+    case 1: i = YRC_OP_EQ; end = YRC_OP_EQEQ; break;
+    case 2: i = YRC_OP_EQEQ; end = YRC_OP_LSHFEQ; break;
+    case 3: i = YRC_OP_LSHFEQ; end = YRC_OP_URSHFEQ; break;
+    case 5: i = YRC_OP_URSHFEQ; end = YRC_OP_LAST; break;
+    default: return 0;
+  }
 
-      }
-    }
-
-    if (j == size && TOKEN_OPERATOR_MAP[i][j] == 0) {
+  for (; i < end; ++i) {
+    if (memcmp(data, TOKEN_OPERATOR_MAP[i], size) == 0) {
       return i;
     }
   }
@@ -171,21 +171,26 @@ yrc_operator_t _string_to_operator(yrc_str_t* str) {
 
 
 yrc_keyword_t _string_to_keyword(yrc_str_t* str) {
-  size_t i;
-  size_t j;
+  yrc_keyword_t i;
+  yrc_keyword_t end;
 
   size_t size = yrc_str_len(str);
   char* data = yrc_str_ptr(str);
 
-  for(i = YRC_KWOP_FENCE + 1; i < sizeof(TOKEN_OPERATOR_MAP) / sizeof(TOKEN_OPERATOR_MAP[0]); ++i) {
-    for(j = 0; j < size && TOKEN_OPERATOR_MAP[i][j] != 0; ++j) {
-      if (TOKEN_OPERATOR_MAP[i][j] != data[j]) {
-        break;
+  switch (size) {
+    case 2: i = YRC_KW_DO; end = YRC_KW_FOR; break;
+    case 3: i = YRC_KW_FOR; end = YRC_KW_VOID; break;
+    case 4: i = YRC_KW_VOID; end = YRC_KW_BREAK; break;
+    case 5: i = YRC_KW_BREAK; end = YRC_KW_DELETE; break;
+    case 6: i = YRC_KW_DELETE; end = YRC_KW_DEFAULT; break;
+    case 7: i = YRC_KW_DEFAULT; end = YRC_KW_FUNCTION; break;
+    case 8: i = YRC_KW_FUNCTION; end = YRC_KW_INSTANCEOF; break;
+    case 10: i = YRC_KW_INSTANCEOF; end = YRC_KW_LAST; break;
+    default: return 0;
+  }
 
-      }
-    }
-
-    if (j == size && TOKEN_OPERATOR_MAP[i][j] == 0) {
+  for (; i < end; ++i) {
+    if (memcmp(data, TOKEN_OPERATOR_MAP[i], size) == 0) {
       return i;
     }
   }
@@ -324,7 +329,7 @@ void _advance_op(yrc_op_t** op_current, yrc_op_t** op_last, char ch) {
 
 #define TO_CASE(a) case a:
 
-int is_ws(char ch) {
+static inline int is_ws(char ch) {
   switch(ch) {
     WHITESPACE_MAP(TO_CASE)
       return 1;
@@ -332,7 +337,7 @@ int is_ws(char ch) {
   return 0;
 }
 
-int is_op(char ch) {
+static inline int is_op(char ch) {
   switch(ch) {
     OPERATOR_MAP(TO_CASE)
       return 1;
@@ -340,7 +345,7 @@ int is_op(char ch) {
   return 0;
 }
 
-int is_alnum(char ch) {
+static inline int is_alnum(char ch) {
   switch(ch) {
     ALPHANUMERIC_MAP(TO_CASE)
       return 1;

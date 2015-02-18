@@ -57,7 +57,7 @@ typedef struct yrc_parse_response_priv_s {
 #define CONSUME(state, CHECK, T) CONSUME_CLEAN(state, CHECK, T, {});
 
 static int advance(yrc_parser_state_t*, uint_fast8_t);
-static int commaexpression(yrc_parser_state_t*, uint_fast32_t, yrc_ast_node_t**, uint_fast8_t);
+static inline int commaexpression(yrc_parser_state_t*, uint_fast32_t, yrc_ast_node_t**, uint_fast8_t);
 static int expression(yrc_parser_state_t*, uint_fast32_t, yrc_ast_node_t**, uint_fast8_t);
 static int statement(yrc_parser_state_t*, yrc_ast_node_t**, uint_fast8_t);
 static int statements(yrc_parser_state_t*, yrc_llist_t*);

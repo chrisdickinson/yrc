@@ -35,12 +35,14 @@ size_t readstdin(char* data, size_t desired, void* ctx) {
 
 int main(int argc, const char** argv) {
   FILE* inp = NULL;
+  const char* filename;
   if (argc < 2) {
-    printf("usage: run-tests [path-to-javascript]\n");
-    return 1;
+    filename = "/Users/chris/projects/personal/yrc/corpus/jquery.js";
+  } else {
+    filename = argv[1];
   }
 
-  inp = fopen(argv[1], "r");
+  inp = fopen(filename, "r");
   if (inp == NULL) {
     printf("could not open %s\n", argv[1]);
     return 1;
