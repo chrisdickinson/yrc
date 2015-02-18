@@ -356,7 +356,7 @@ int yrc_tokenizer_scan(
     yrc_scan_allow_regexp regexp_mode) {
   size_t last_fpos, last_line, last_col, fpos, line, col;
   yrc_tokenizer_state state = YRC_TKS_DEFAULT;
-  size_t offset, start, diff, size;
+  size_t offset, start, diff;
   yrc_op_t *op_current, *op_last;
   char last = '\0';
   char* data;
@@ -374,9 +374,6 @@ int yrc_tokenizer_scan(
   last_line = line = tokenizer->line;
   last_col = col = tokenizer->col;
   offset = tokenizer->offset;
-  size = tokenizer->size;
-  eof = tokenizer->eof;
-  flags = tokenizer->flags;
 
   switch (regexp_mode) {
     case YRC_IS_REGEXP_EQ:
@@ -390,14 +387,14 @@ int yrc_tokenizer_scan(
     default: break;
 
   }
-  while (!eof) {
-    if (offset == size) {
-      size = read(tokenizer->data, tokenizer->chunksz, tokenizer->readctx);
+  while (!tokenizer->eof) {
+    if (offset == tokenizer->size) {
+      tokenizer->size = read(tokenizer->data, tokenizer->chunksz, tokenizer->readctx);
       offset = 0;
     }
 
-    if (size == 0) {
-      eof = 1;
+    if (tokenizer->size == 0) {
+      tokenizer->eof = 1;
     }
 
 restart:
@@ -405,7 +402,7 @@ restart:
       start = offset;
       switch (state) {
         case YRC_TKS_DEFAULT: {
-            if (eof) {
+            if (tokenizer->eof) {
               state = YRC_TKS_DONE;
               break;
             }
@@ -445,7 +442,7 @@ restart:
                 goto export;
               NUMERIC_MAP(TO_CASE)
                 last = 0;
-                flags = 0;
+                tokenizer->flags = 0;
                 state = YRC_TKS_NUMBER;
                 break;
 
@@ -468,8 +465,8 @@ restart:
           break;
 
         case YRC_TKS_WHITESPACE: {
-            while(offset < size) {
-              if (eof || !is_ws(data[offset])) {
+            while(offset < tokenizer->size) {
+              if (tokenizer->eof || !is_ws(data[offset])) {
                 state = YRC_TKS_DEFAULT;
                 break;
 
@@ -486,7 +483,7 @@ restart:
             diff = offset - start;
             fpos += diff;
             start = offset;
-            if (offset == size) {
+            if (offset == tokenizer->size) {
               break;
 
             }
@@ -502,12 +499,12 @@ restart:
 
         case YRC_TKS_STRING: {
             while(1) {
-              if (offset == size && !eof) {
+              if (offset == tokenizer->size && !tokenizer->eof) {
                 pending_read = 1;
                 break;
 
               } {
-                if (eof || data[offset] == '\n') {
+                if (tokenizer->eof || data[offset] == '\n') {
                   return 1;
                 }
                 if (data[offset] == delim) {
@@ -563,12 +560,12 @@ restart:
               case 'u':
               case 'U':
                 state = YRC_TKS_STRING_UNICODE;
-                flags = 0;
+                tokenizer->flags = 0;
                 goto restart;
               case 'x':
               case 'X':
                 state = YRC_TKS_STRING_HEX;
-                flags = 0;
+                tokenizer->flags = 0;
                 goto restart;
               default:
                 return 1;
@@ -628,10 +625,10 @@ restart:
 
         case YRC_TKS_STRING_UNICODE: {
             while(1) {
-              if (eof) return 1;
-              if (flags) {
+              if (tokenizer->eof) return 1;
+              if (tokenizer->flags) {
                 state = YRC_TKS_STRING;
-                flags = 0;
+                tokenizer->flags = 0;
                 break;
 
               }
@@ -660,7 +657,7 @@ restart:
 
                 default:
                   return 1;
-              } ++flags;
+              } ++tokenizer->flags;
               last = data[offset];
               ++offset;
             }
@@ -686,7 +683,7 @@ restart:
 
         case YRC_TKS_NUMBER: {
             while(1) {
-              if (offset == size && !eof) {
+              if (offset == tokenizer->size && !tokenizer->eof) {
                 pending_read = 1;
                 break;
 
@@ -694,13 +691,13 @@ restart:
                 should_break = 0;
                 switch (data[offset]) {
                   case '.':
-                    if (flags & REPR_SEEN_ANY) {
+                    if (tokenizer->flags & REPR_SEEN_ANY) {
                       state = YRC_TKS_DEFAULT;
                       should_break = 1;
                       break;
 
                     }
-                    flags |= REPR_SEEN_DOT;
+                    tokenizer->flags |= REPR_SEEN_DOT;
                     break;
 
                   case 'a':
@@ -713,28 +710,28 @@ restart:
                   case 'D':
                   case 'f':
                   case 'F':
-                    if (flags & REPR_SEEN_HEX) {
+                    if (tokenizer->flags & REPR_SEEN_HEX) {
                       break;
 
                     }
                     return 1;
                   case 'e':
                   case 'E':
-                    if (flags & REPR_SEEN_HEX) {
+                    if (tokenizer->flags & REPR_SEEN_HEX) {
                       break;
 
                     }
-                    if (flags & REPR_SEEN_EXP) {
+                    if (tokenizer->flags & REPR_SEEN_EXP) {
                       return 1;
                     }
-                    flags |= data[offset] == 'e' ? REPR_SEEN_EXP_LE : REPR_SEEN_EXP_BE;
+                    tokenizer->flags |= data[offset] == 'e' ? REPR_SEEN_EXP_LE : REPR_SEEN_EXP_BE;
                     break;
 
                   case 'x':
                     if (last != '0') {
                       return 1;
                     }
-                    flags |= REPR_SEEN_HEX;
+                    tokenizer->flags |= REPR_SEEN_HEX;
                     break;
 
                   case '0':
@@ -781,12 +778,12 @@ restart:
               return 1;
             }
             tk->type = YRC_TOKEN_NUMBER;
-            tk->info.as_number.repr = flags;
-            if (flags & (REPR_SEEN_DOT | REPR_SEEN_EXP)) {
+            tk->info.as_number.repr = tokenizer->flags;
+            if (tokenizer->flags & (REPR_SEEN_DOT | REPR_SEEN_EXP)) {
               tk->info.as_number.repr |= REPR_IS_FLOAT;
               tk->info.as_number.data.as_double = strtod(yrc_str_ptr(&tokenizer->current), NULL);
             } else {
-              tk->info.as_number.data.as_int = strtoll(yrc_str_ptr(&tokenizer->current) + (flags & REPR_SEEN_HEX ? 2 : 0), NULL, flags & REPR_SEEN_HEX ? 16 : 10 );
+              tk->info.as_number.data.as_int = strtoll(yrc_str_ptr(&tokenizer->current) + (tokenizer->flags & REPR_SEEN_HEX ? 2 : 0), NULL, tokenizer->flags & REPR_SEEN_HEX ? 16 : 10 );
             }
             if (yrc_str_xfer(&tokenizer->current, NULL)) {
               return 1;
@@ -797,12 +794,12 @@ restart:
 
         case YRC_TKS_IDENTIFIER: {
             while(1) {
-              if (offset == size && !eof) {
+              if (offset == tokenizer->size && !tokenizer->eof) {
                 pending_read = 1;
                 break;
 
               } {
-                if (eof || !is_alnum(data[offset])) {
+                if (tokenizer->eof || !is_alnum(data[offset])) {
                   state = YRC_TKS_DEFAULT;
                   break;
 
@@ -842,7 +839,7 @@ restart:
 
         case YRC_TKS_OPERATOR: {
             while(1) {
-              if (offset == size && !eof) {
+              if (offset == tokenizer->size && !tokenizer->eof) {
                 pending_read = 1;
                 break;
 
@@ -914,12 +911,12 @@ restart:
 
         case YRC_TKS_COMMENT_LINE: {
             while(1) {
-              if (offset == size && !eof) {
+              if (offset == tokenizer->size && !tokenizer->eof) {
                 pending_read = 1;
                 break;
 
               } {
-                if (eof || data[offset] == '\n') {
+                if (tokenizer->eof || data[offset] == '\n') {
                   state = YRC_TKS_DEFAULT;
                   break;
 
@@ -953,12 +950,12 @@ restart:
 
         case YRC_TKS_COMMENT_BLOCK: {
             while(1) {
-              if (offset == size && !eof) {
+              if (offset == tokenizer->size && !tokenizer->eof) {
                 pending_read = 1;
                 break;
 
               } {
-                if (eof) return 1;
+                if (tokenizer->eof) return 1;
                 if (data[offset] == '\n') {
                   ++line;
                   col = 0;
@@ -1000,12 +997,12 @@ restart:
 
         case YRC_TKS_REGEXP_HEAD: {
             while(1) {
-              if (offset == size && !eof) {
+              if (offset == tokenizer->size && !tokenizer->eof) {
                 pending_read = 1;
                 break;
 
               }
-              if (eof || data[offset] == '\n') {
+              if (tokenizer->eof || data[offset] == '\n') {
                 return 1;
               }
               if (data[offset] == '/' && last != '\\') {
@@ -1031,18 +1028,18 @@ restart:
               break;
 
             } ++offset;
-            flags = 0;
+            tokenizer->flags = 0;
           };
           break;
 
         case YRC_TKS_REGEXP_TAIL: {
             while(1) {
-              if (offset == size && !eof) {
+              if (offset == tokenizer->size && !tokenizer->eof) {
                 pending_read = 1;
                 break;
 
               }
-              if (eof) {
+              if (tokenizer->eof) {
                 state = YRC_TKS_DEFAULT;
                 break;
 
@@ -1050,19 +1047,19 @@ restart:
               should_break = 0;
               switch(data[offset]) {
                 case 'm':
-                  should_break = !((flags ^= YRC_REGEXP_MULTILINE) & YRC_REGEXP_MULTILINE);
+                  should_break = !((tokenizer->flags ^= YRC_REGEXP_MULTILINE) & YRC_REGEXP_MULTILINE);
                   break;
 
                 case 'y':
-                  should_break = !((flags ^= YRC_REGEXP_STICKY) & YRC_REGEXP_STICKY);
+                  should_break = !((tokenizer->flags ^= YRC_REGEXP_STICKY) & YRC_REGEXP_STICKY);
                   break;
 
                 case 'g':
-                  should_break = !((flags ^= YRC_REGEXP_GLOBAL) & YRC_REGEXP_GLOBAL);
+                  should_break = !((tokenizer->flags ^= YRC_REGEXP_GLOBAL) & YRC_REGEXP_GLOBAL);
                   break;
 
                 case 'i':
-                  should_break = !((flags ^= YRC_REGEXP_IGNORECASE) & YRC_REGEXP_IGNORECASE);
+                  should_break = !((tokenizer->flags ^= YRC_REGEXP_IGNORECASE) & YRC_REGEXP_IGNORECASE);
                   break;
 
                 default:
@@ -1093,7 +1090,7 @@ restart:
             }
             tk->type = YRC_TOKEN_REGEXP;
             yrc_str_xfer(&tokenizer->current, &tk->info.as_regexp.str);
-            tk->info.as_regexp.flags = flags;
+            tk->info.as_regexp.flags = tokenizer->flags;
             goto export;
           };
           break;
@@ -1107,12 +1104,17 @@ restart:
           break;
 
       }
-    } while (offset < size);
+    } while (offset < tokenizer->size);
 
 
   }
   *out = NULL;
-  tokenizer->start = start; tokenizer->fpos = fpos; tokenizer->line = line; tokenizer->col = col; tokenizer->offset = offset; tokenizer->size = size; tokenizer->flags = flags; tokenizer->eof = eof;;
+  tokenizer->start = start;
+  tokenizer->fpos = fpos;
+  tokenizer->line = line;
+  tokenizer->col = col;
+  tokenizer->offset = offset;
+
   return 0;
 export:
   tk->start.fpos = last_fpos;
@@ -1125,7 +1127,12 @@ export:
     return 1;
   }
   *out = tk;
-  tokenizer->start = start; tokenizer->fpos = fpos; tokenizer->line = line; tokenizer->col = col; tokenizer->offset = offset; tokenizer->size = size; tokenizer->flags = flags; tokenizer->eof = eof;;
+  tokenizer->start = start;
+  tokenizer->fpos = fpos;
+  tokenizer->line = line;
+  tokenizer->col = col;
+  tokenizer->offset = offset;
+
   return 0;
 }
 
