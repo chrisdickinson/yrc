@@ -199,7 +199,6 @@ typedef struct yrc_token_comment_s {
 } yrc_token_comment_t;
 
 typedef struct yrc_token_whitespace_s {
-  yrc_str_t str;
   int has_newline;
 } yrc_token_whitespace_t;
 

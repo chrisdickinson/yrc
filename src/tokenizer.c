@@ -255,7 +255,6 @@ int _free_tokens(void* raw, size_t idx, void* ctx, int* stop) {
       break;
 
     case YRC_TOKEN_WHITESPACE:
-      yrc_str_free(&token->info.as_whitespace.str);
       break;
 
     default:
@@ -489,9 +488,6 @@ restart:
             }
             diff = offset - start;
             fpos += diff;
-            if (yrc_str_pushv(&tokenizer->current, data + start, diff)) {
-              return 1;
-            }
             start = offset;
             if (offset == size) {
               break;
@@ -502,7 +498,6 @@ restart:
               return 1;
             }
             tk->type = YRC_TOKEN_WHITESPACE;
-            yrc_str_xfer(&tokenizer->current, &tk->info.as_whitespace.str);
             tk->info.as_whitespace.has_newline = line != last_line;
             goto export;
           };
@@ -1150,7 +1145,6 @@ void yrc_token_repr(yrc_token_t* tk) {
     break;
 
     case YRC_TOKEN_WHITESPACE:
-      printf("%lu", yrc_str_len(&tk->info.as_whitespace.str));
     break;
 
     case YRC_TOKEN_STRING:
