@@ -68,12 +68,25 @@ arenaptr
   * deallocations are O(1) (and may help avoid O(N) search if a bunch are grouped)
 **/
 
-#define MASK_SIZE 4
-#define FREE_SIZE (MASK_SIZE * 64)
+typedef size_t mask_member_t;
+
+enum {
+  kMaskSize=4,
+  kMaskMemberSize=sizeof(mask_member_t),
+  kMaskByteLength=kMaskMemberSize * kMaskSize,
+  kMaskMemberBitLength=kMaskMemberSize * 8,
+  kArenaByteLength=kMaskMemberBitLength * kMaskSize,
+
+  kMaskMemberBitLengthMinusOne=kMaskMemberBitLength - 1,
+  kMaskShift=
+    kMaskMemberSize == 2 ? 4 :
+    kMaskMemberSize == 4 ? 5 :
+    kMaskMemberSize == 8 ? 6 : 7
+};
 
 typedef struct yrc_pool_arena_s {
   struct yrc_pool_arena_s* next;
-  uint64_t used_mask[MASK_SIZE];
+  uint64_t used_mask[kMaskSize];
   uint_fast32_t free;
   char data[1];
 } yrc_pool_arena_t;
@@ -91,16 +104,16 @@ static yrc_pool_arena_t* alloc_arena(yrc_pool_t* pool) {
   yrc_pool_arena_t** iter;
   yrc_pool_arena_t* arena;
   uint_fast32_t i;
-  arena = malloc(sizeof(yrc_pool_arena_t) - 1 + (sizeof(yrc_pool_arena_t**) + pool->objsize) * FREE_SIZE);
+  arena = malloc(sizeof(yrc_pool_arena_t) - 1 + (sizeof(yrc_pool_arena_t**) + pool->objsize) * kArenaByteLength);
   if (arena == NULL) {
     return NULL;
   }
   arena->next = NULL;
-  memset(arena->used_mask, 0xFF, MASK_SIZE * 8);
-  arena->free = FREE_SIZE;
+  memset(arena->used_mask, 0xFF, kMaskByteLength);
+  arena->free = kArenaByteLength;
   ++pool->num_arenas;
   iter = (yrc_pool_arena_t**)arena->data;
-  for(i = 0; i < FREE_SIZE; ++i) {
+  for(i = 0; i < kArenaByteLength; ++i) {
     *iter = arena;
     iter = (void*)((sizeof(yrc_pool_arena_t**) + pool->objsize) + (size_t)(iter));
   }
@@ -132,15 +145,15 @@ void* yrc_pool_attain(yrc_pool_t* pool) {
   int i;
 retry:
   if (pool->current->free) {
-    for (i = 0; i < MASK_SIZE; ++i) {
+    for (i = 0; i < kMaskSize; ++i) {
       if (pool->current->used_mask[i]) {
         arena_pos = clz(pool->current->used_mask[i]);
-        pool->current->used_mask[i] &= ~(1UL << (63 - arena_pos));
+        pool->current->used_mask[i] &= ~(1UL << (kMaskMemberBitLengthMinusOne - arena_pos));
         --pool->current->free;
         return (void*)(
           (size_t)pool->current->data + 
           (size_t)(
-            (arena_pos + (i<<6)) * 
+            (arena_pos + (i << kMaskShift)) * 
             (pool->objsize + sizeof(yrc_pool_arena_t**)) +
             sizeof(yrc_pool_arena_t**)
           )
@@ -174,7 +187,7 @@ int yrc_pool_release(yrc_pool_t* pool, void* ptr) {
   yrc_pool_arena_t* arena = *(yrc_pool_arena_t**)(baseptr);
   int arena_pos = ((uint_fast32_t)((size_t)baseptr - (size_t)arena->data) /
     (sizeof(yrc_pool_arena_t**) + pool->objsize));
-  arena->used_mask[arena_pos >> 6] |= 1UL << (arena_pos & 63);
+  arena->used_mask[arena_pos >> kMaskShift] |= 1UL << (arena_pos & kMaskMemberBitLengthMinusOne);
   ++arena->free;
   pool->deallocs = 1;
   if (arena->free > pool->current->free) {
