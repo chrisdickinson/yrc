@@ -41,6 +41,10 @@ int main(int argc, const char** argv) {
   }
 
   inp = fopen(argv[1], "r");
+  if (inp == NULL) {
+    printf("could not open %s\n", argv[1]);
+    return 1;
+  }
   yrc_parse_request_t req = {
     .read=readstdin,
     .readsize=16384,
