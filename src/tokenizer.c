@@ -5,6 +5,7 @@
 #include <string.h>
 #include <stdio.h>
 #include <assert.h>
+#include <ctype.h>
 #include "str.h"
 
 /* extends yrc_error_t */
@@ -345,11 +346,7 @@ static inline int is_op(char ch) {
 }
 
 static inline int is_alnum(char ch) {
-  switch(ch) {
-    ALPHANUMERIC_MAP(TO_CASE)
-      return 1;
-  }
-  return 0;
+  return isalnum((int)ch) || ch == '$' || ch == '_';
 }
 
 int yrc_tokenizer_scan(
