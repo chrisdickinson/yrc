@@ -33,6 +33,24 @@ size_t readstdin(char* data, size_t desired, void* ctx) {
   return fread(data, 1, desired, inp);
 }
 
+size_t readstr(char* data, size_t desired, void* ctx) {
+  static int cnt = 0;
+  static size_t pos = 0;
+  static size_t len = 0;
+  if (len == 0) len = strlen(ctx);
+  if (pos == len) {
+    if (cnt++ < 10) {
+      pos = 0;
+    } else {
+      return 0;
+    }
+  }
+  size_t read = desired < len - pos ? desired : len - pos;
+  memcpy(data, ctx + pos, read);
+  pos += read;
+  return read;
+}
+
 int main(int argc, const char** argv) {
   FILE* inp = NULL;
   const char* filename;
