@@ -482,10 +482,12 @@ static int _prefix_object(yrc_parser_state_t* state, yrc_token_t* orig, yrc_ast_
 
     /* XXX: todo, support "{get: x}" */
     if (0)
-    if (state->token->type == YRC_TOKEN_IDENT && state->token->info.as_ident.size == 3) {
-      if (state->token->info.as_ident.data[1] == 'e' &&
-          state->token->info.as_ident.data[2] == 't') {
-        switch(state->token->info.as_ident.data[0]) {
+    if (state->token->type == YRC_TOKEN_IDENT && yrc_str_len(&state->token->info.as_ident.str) == 3) {
+      char* ptr;
+      ptr = yrc_str_ptr(&state->token->info.as_ident.str);
+      if (ptr[1] == 'e' &&
+          ptr[2] == 't') {
+        switch(ptr[0]) {
           case 's':
           item->data.as_property.type |= YRC_PROP_SPC | YRC_PROP_SET;
           break;

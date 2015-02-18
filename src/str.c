@@ -24,6 +24,11 @@ inline static int intern_cmp(yrc_str_t* lhs, yrc_str_t* rhs) {
   return 1;
 }
 
+void yrc_str_init(yrc_str_t* str) {
+  memset(str, 0, sizeof(*str));
+  str->interned.flag = 1;
+}
+
 int yrc_str_cmp(yrc_str_t* lhs, yrc_str_t* rhs) {
   size_t lhssz;
   size_t rhssz;
@@ -45,7 +50,7 @@ size_t yrc_str_len(yrc_str_t* str) {
   return interned_size(str);
 }
 
-static int externalize(yrc_str_t* str, char* data, size_t cur, size_t sz) {
+static int externalize(yrc_str_t* str, const char* data, size_t cur, size_t sz) {
   size_t toalloc;
   char* ptr;
 
@@ -63,7 +68,7 @@ static int externalize(yrc_str_t* str, char* data, size_t cur, size_t sz) {
   return 0;
 }
 
-static int do_interned_pushv(yrc_str_t* str, char* data, size_t sz) {
+static int do_interned_pushv(yrc_str_t* str, const char* data, size_t sz) {
   size_t current;
   int i, j;
   int newsz;
@@ -77,7 +82,7 @@ static int do_interned_pushv(yrc_str_t* str, char* data, size_t sz) {
   return 0;
 }
 
-static int do_externed_pushv(struct yrc_extern_str* exstr, char* data, size_t sz) {
+static int do_externed_pushv(struct yrc_extern_str* exstr, const char* data, size_t sz) {
   size_t newsz;
   char* ptr;
   newsz = exstr->size + sz;
@@ -106,8 +111,11 @@ int yrc_str_push(yrc_str_t* str, char ch) {
   return do_externed_pushv(&str->externed, &ch, 1);
 }
 
-int yrc_str_pushv(yrc_str_t* str, char* chs, size_t sz) {
-  return 0;
+int yrc_str_pushv(yrc_str_t* str, const char* chs, size_t sz) {
+  if (is_interned(str)) {
+    return do_interned_pushv(str, chs, sz);
+  }
+  return do_externed_pushv(&str->externed, chs, sz);
 }
 
 char* yrc_str_ptr(yrc_str_t* str) {
@@ -120,19 +128,21 @@ char* yrc_str_ptr(yrc_str_t* str) {
 int yrc_str_free(yrc_str_t* str) {
   if (!is_interned(str) && str->externed.data) {
     free(str->externed.data);
-    return 0;
   }
+  return 0;
 }
 
 int yrc_str_xfer(yrc_str_t* src, yrc_str_t* dst) {
-  dst->externed.avail = src->externed.avail;
-  dst->externed.data = src->externed.data;
-  dst->externed.size = src->externed.size;
-  if (!is_interned(src)) {
-    if (src->externed.data == NULL) {
-      UNREACHABLE();
-    }
-    src->externed.size = 0;
-    src->externed.data = NULL;
+  if (dst) {
+    dst->externed.avail = src->externed.avail;
+    dst->externed.data = src->externed.data;
+    dst->externed.size = src->externed.size;
   }
+  if (!is_interned(src) && !dst) {
+    free(src->externed.data);
+  }
+  src->externed.data = 0;
+  src->externed.avail = 0;
+  src->interned.flag = 1;
+  return 0;
 }

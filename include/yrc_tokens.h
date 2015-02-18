@@ -1,5 +1,6 @@
 #ifndef YRC_TOKENS_H
 #define YRC_TOKENS_H
+#include "yrc_str.h"
 /**
   token types -- in "ENUM" and "ident"
   flavors.
@@ -164,15 +165,13 @@ typedef enum {
 } yrc_regexp_flags;
 
 typedef struct yrc_token_regexp_s {
-  size_t size;
-  char* data;
+  yrc_str_t str;
   yrc_regexp_flags flags;
 } yrc_token_regexp_t;
 
 typedef struct yrc_token_string_s {
   yrc_token_string_delim delim;  /* " ' ''' """ */
-  size_t size;
-  char* data;
+  yrc_str_t str;
 } yrc_token_string_t;
 
 typedef struct yrc_token_number_s {
@@ -184,19 +183,16 @@ typedef struct yrc_token_number_s {
 } yrc_token_number_t;
 
 typedef struct yrc_token_ident_s {
-  size_t size;
-  char* data;
+  yrc_str_t str;
 } yrc_token_ident_t;
 
 typedef struct yrc_token_comment_s {
   yrc_token_comment_delim delim; /* c-style cpp-style */
-  size_t size;
-  char* data;
+  yrc_str_t str;
 } yrc_token_comment_t;
 
 typedef struct yrc_token_whitespace_s {
-  size_t size;
-  char* data;
+  yrc_str_t str;
   int has_newline;
 } yrc_token_whitespace_t;
 
