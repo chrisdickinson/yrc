@@ -358,7 +358,7 @@ int yrc_tokenizer_scan(
     yrc_scan_allow_regexp regexp_mode) {
   size_t last_fpos, last_line, last_col, fpos, line;
   yrc_tokenizer_state state = YRC_TKS_DEFAULT;
-  size_t offset, start, diff;
+  size_t offset, diff;
   yrc_op_t *op_current, *op_last;
   char last = '\0';
   char* data;
@@ -366,9 +366,8 @@ int yrc_tokenizer_scan(
   char should_break = 0;
   yrc_token_t* tk;
   char delim;
-  int pending_read = 0;
+  uint_fast8_t pending_read = 0;
 
-  start = tokenizer->start;
   data = tokenizer->data;
   last_fpos = fpos = tokenizer->fpos;
   last_line = line = tokenizer->line;
@@ -399,7 +398,7 @@ int yrc_tokenizer_scan(
 
 restart:
     do {
-      start = offset;
+      tokenizer->start = offset;
       switch (state) {
         case YRC_TKS_DEFAULT: {
             if (tokenizer->eof) {
@@ -474,9 +473,9 @@ restart:
               last = data[offset];
               ++offset;
             }
-            diff = offset - start;
+            diff = offset - tokenizer->start;
             fpos += diff;
-            start = offset;
+            tokenizer->start = offset;
             if (offset == tokenizer->size) {
               break;
 
@@ -508,7 +507,7 @@ restart:
                 }
                 if (data[offset] == '\\') {
                   state = YRC_TKS_STRING_ESCAPE;
-                  if (yrc_str_pushv(&tokenizer->current, data + start, offset - start)) {
+                  if (yrc_str_pushv(&tokenizer->current, data + tokenizer->start, offset - tokenizer->start)) {
                     return 1;
                   }
                   ++fpos;
@@ -519,12 +518,12 @@ restart:
               last = data[offset];
               ++offset;
             }
-            diff = offset - start;
+            diff = offset - tokenizer->start;
             fpos += diff;
-            if (yrc_str_pushv(&tokenizer->current, data + start, diff)) {
+            if (yrc_str_pushv(&tokenizer->current, data + tokenizer->start, diff)) {
               return 1;
             }
-            start = offset;
+            tokenizer->start = offset;
             if (pending_read) {
               pending_read = 0;
               break;
@@ -651,12 +650,12 @@ restart:
               last = data[offset];
               ++offset;
             }
-            diff = offset - start;
+            diff = offset - tokenizer->start;
             fpos += diff;
-            if (yrc_str_pushv(&tokenizer->current, data + start, diff)) {
+            if (yrc_str_pushv(&tokenizer->current, data + tokenizer->start, diff)) {
               return 1;
             }
-            start = offset;
+            tokenizer->start = offset;
             if (pending_read) {
               pending_read = 0;
               break;
@@ -750,12 +749,12 @@ restart:
               last = data[offset];
               ++offset;
             }
-            diff = offset - start;
+            diff = offset - tokenizer->start;
             fpos += diff;
-            if (yrc_str_pushv(&tokenizer->current, data + start, diff)) {
+            if (yrc_str_pushv(&tokenizer->current, data + tokenizer->start, diff)) {
               return 1;
             }
-            start = offset;
+            tokenizer->start = offset;
             if (pending_read) {
               pending_read = 0;
               break;
@@ -796,12 +795,12 @@ restart:
               last = data[offset];
               ++offset;
             }
-            diff = offset - start;
+            diff = offset - tokenizer->start;
             fpos += diff;
-            if (yrc_str_pushv(&tokenizer->current, data + start, diff)) {
+            if (yrc_str_pushv(&tokenizer->current, data + tokenizer->start, diff)) {
               return 1;
             }
-            start = offset;
+            tokenizer->start = offset;
             if (pending_read) {
               pending_read = 0;
               break;
@@ -869,12 +868,12 @@ restart:
               last = data[offset];
               ++offset;
             }
-            diff = offset - start;
+            diff = offset - tokenizer->start;
             fpos += diff;
-            if (yrc_str_pushv(&tokenizer->current, data + start, diff)) {
+            if (yrc_str_pushv(&tokenizer->current, data + tokenizer->start, diff)) {
               return 1;
             }
-            start = offset;
+            tokenizer->start = offset;
             if (pending_read) {
               pending_read = 0;
               break;
@@ -909,12 +908,12 @@ restart:
               last = data[offset];
               ++offset;
             }
-            diff = offset - start;
+            diff = offset - tokenizer->start;
             fpos += diff;
-            if (yrc_str_pushv(&tokenizer->current, data + start, diff)) {
+            if (yrc_str_pushv(&tokenizer->current, data + tokenizer->start, diff)) {
               return 1;
             }
-            start = offset;
+            tokenizer->start = offset;
             if (pending_read) {
               pending_read = 0;
               break;
@@ -953,12 +952,12 @@ restart:
               last = data[offset];
               ++offset;
             }
-            diff = offset - start;
+            diff = offset - tokenizer->start;
             fpos += diff;
-            if (yrc_str_pushv(&tokenizer->current, data + start, diff)) {
+            if (yrc_str_pushv(&tokenizer->current, data + tokenizer->start, diff)) {
               return 1;
             }
-            start = offset;
+            tokenizer->start = offset;
             if (pending_read) {
               pending_read = 0;
               break;
@@ -996,12 +995,12 @@ restart:
                 last = data[offset];
               } ++offset;
             }
-            diff = offset - start;
+            diff = offset - tokenizer->start;
             fpos += diff;
-            if (yrc_str_pushv(&tokenizer->current, data + start, diff)) {
+            if (yrc_str_pushv(&tokenizer->current, data + tokenizer->start, diff)) {
               return 1;
             }
-            start = offset;
+            tokenizer->start = offset;
             if (pending_read) {
               pending_read = 0;
               break;
@@ -1054,9 +1053,9 @@ restart:
               last = data[offset];
               ++offset;
             }
-            diff = offset - start;
+            diff = offset - tokenizer->start;
             fpos += diff;
-            start = offset;
+            tokenizer->start = offset;
             if (pending_read) {
               pending_read = 0;
               break;
@@ -1084,7 +1083,6 @@ restart:
 
   }
   *out = NULL;
-  tokenizer->start = start;
   tokenizer->fpos = fpos;
   tokenizer->line = line;
   tokenizer->col = fpos - tokenizer->last_nl;
@@ -1102,7 +1100,6 @@ export:
     return 1;
   }
   *out = tk;
-  tokenizer->start = start;
   tokenizer->fpos = fpos;
   tokenizer->line = line;
   tokenizer->col = tk->end.col;
